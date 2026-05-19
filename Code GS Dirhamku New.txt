@@ -1,0 +1,270 @@
+// ================= CONFIG =================
+var SPREADSHEET_ID = PropertiesService.getScriptProperties().getProperty("SPREADSHEET_ID") || "1duojhJW0qmL1cDcprmSKTLqGY_sSFkQKt15k8N3DVgs";
+var SHEET_NAME = "Data";
+var DEFAULT_MONTHLY_BUDGET = 3000000;
+
+var CATEGORY_MAP = {
+  "food": "Food", "makan": "Food", "drink": "Food", "coffee": "Food", "bakso": "Food", "ayam": "Food", "nasi": "Food",
+  "transport": "Transport", "bensin": "Transport", "gojek": "Transport", "grab": "Transport", "tol": "Transport", "parkir": "Transport",
+  "bills": "Bills", "internet": "Bills", "listrik": "Bills", "air": "Bills", "wifi": "Bills", "pulsa": "Bills",
+  "rent": "Housing", "kos": "Housing", "kontrakan": "Housing", "sewa": "Housing",
+  "health": "Health", "obat": "Health", "dokter": "Health", "klinik": "Health", "vitamin": "Health",
+  "education": "Education", "book": "Education", "buku": "Education", "kursus": "Education",
+  "shopping": "Shopping", "baju": "Shopping", "belanja": "Shopping",
+  "entertainment": "Entertainment", "nonton": "Entertainment", "bioskop": "Entertainment",
+  "social": "Social", "sedekah": "Social", "donasi": "Social", "kado": "Social",
+  "finance": "Finance", "admin": "Finance", "bank": "Finance",
+  "others": "Others",
+  "salary": "Salary", "gaji": "Salary", "bonus": "Bonus", "thr": "Bonus"
+};
+
+function doGet(e) {
+  return HtmlService.createHtmlOutputFromFile('index')
+      .setTitle('Dirhamku - Money Keeper')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DEFAULT)
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no');
+}
+
+function appendTransaction(tx) {
+  try {
+    var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    var sheet = ss.getSheetByName(SHEET_NAME);
+    if (!sheet) { 
+        sheet = ss.insertSheet(SHEET_NAME); 
+        sheet.appendRow(["Date", "Type", "Category", "Amount", "Note"]); 
+        sheet.getRange("A1:E1").setFontWeight("bold").setBackground("#040720").setFontColor("white");
+    }
+    if (!tx.date || !tx.amount) return { ok: false, error: "Data transaksi tidak lengkap" };
+    sheet.appendRow([new Date(tx.date), tx.type, tx.category, tx.amount, tx.note]);
+    return { ok: true };
+  } catch (e) { return { ok: false, error: e.message }; }
+}
+
+function getBalanceData() {
+  try {
+    var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    var sheet = ss.getSheetByName(SHEET_NAME);
+    if (!sheet) return { ok: true, totalBalance: 0, monthlyData: {} }; 
+    var data = sheet.getDataRange().getValues();
+    if (data.length <= 1) return { ok: true, totalBalance: 0, monthlyData: {} };
+    data.shift(); 
+
+    var totalIncome = 0, totalExpense = 0, monthlyData = {};
+    data.forEach(row => {
+      var date = new Date(row[0]);
+      var type = row[1];
+      var amount = parseFloat(row[3]) || 0;
+      if (isNaN(date.getTime())) return;
+      var key = Utilities.formatDate(date, Session.getScriptTimeZone(), "yyyy-MM");
+      
+      if (!monthlyData[key]) {
+        monthlyData[key] = { income: 0, expense: 0, balance: 0, label: date.toLocaleString('id-ID', { month: 'long', year: 'numeric' }) };
+      }
+      if (type === 'Income') { totalIncome += amount; monthlyData[key].income += amount; } 
+      else if (type === 'Expense') { totalExpense += amount; monthlyData[key].expense += amount; }
+    });
+
+    Object.keys(monthlyData).forEach(k => monthlyData[k].balance = monthlyData[k].income - monthlyData[k].expense);
+    return { ok: true, totalBalance: totalIncome - totalExpense, monthlyData: monthlyData };
+  } catch (err) { return { ok: false, error: err.message }; }
+}
+
+function handleCommand(commandText) {
+  try {
+    var textLower = (commandText || "").trim().toLowerCase();
+    var command = textLower.split(/\s+/)[0]; 
+    switch(command) {
+      case "/setbudget": return handleSetBudget(commandText);
+      case "/status": return handleStatus(commandText);
+      case "/performance": return handlePerformance(commandText);
+      case "/transaction": return handleGetTransactions(commandText);
+      default: return { ok: false, data: "Perintah tidak dikenal. Ketik <code>/help</code>." };
+    }
+  } catch (err) { return { ok: false, data: "Server Error: " + err.message }; }
+}
+
+// --- REPORT LOGIC UPDATED ---
+
+function handleStatus(commandText) {
+    var baseDate = parseDateFromCommand(commandText);
+    var ranges = getMonthRanges(baseDate);
+    var monthlyBudget = parseFloat(PropertiesService.getScriptProperties().getProperty("MONTHLY_BUDGET") || DEFAULT_MONTHLY_BUDGET);
+    var data = getSheetData();
+    var reportData = { totalExpense: 0, transactions: [] };
+    if (data) reportData = getReportData(data, ranges.targetStart, ranges.targetEnd);
+    
+    var daysInMonth = new Date(ranges.targetStart.getFullYear(), ranges.targetStart.getMonth() + 1, 0).getDate();
+    var today = new Date();
+    // Jika bulan report == bulan sekarang, hari berlalu = tanggal hari ini. Jika masa lalu, hari berlalu = total hari bulan itu.
+    var isCurrentMonth = baseDate.getMonth() === today.getMonth() && baseDate.getFullYear() === today.getFullYear();
+    var daysPassed = isCurrentMonth ? today.getDate() : daysInMonth;
+    var remainingBudget = monthlyBudget - reportData.totalExpense;
+    var avgDaily = daysPassed > 0 ? Math.round(reportData.totalExpense / daysPassed) : 0;
+    var budgetUsedPercent = (reportData.totalExpense / monthlyBudget) * 100;
+    
+    // Suggestion logic
+    var remainingDays = daysInMonth - daysPassed;
+    var dailySuggestion = remainingDays > 0 ? Math.max(0, Math.round(remainingBudget / remainingDays)) : 0;
+
+    // Chart Data Generation
+    var labels = Array.from({length: daysInMonth}, (_, i) => i + 1);
+    var dailyTotals = new Array(daysInMonth).fill(0);
+    reportData.transactions.forEach(tx => {
+        if (tx.type === 'Expense') dailyTotals[new Date(tx.date).getDate() - 1] += tx.amount;
+    });
+    var cumulativeData = [], runningTotal = 0;
+    var limitDay = isCurrentMonth ? today.getDate() : daysInMonth;
+    for (var i = 0; i < limitDay; i++) { runningTotal += dailyTotals[i]; cumulativeData.push(runningTotal); }
+
+    return { 
+      ok: true, type: 'status',
+      data: {
+        monthName: ranges.targetStart.toLocaleString('id-ID', { month: 'long' }),
+        year: ranges.targetStart.getFullYear(),
+        stats: {
+            remainingBudget: remainingBudget,
+            dailySuggestion: dailySuggestion,
+            avgDaily: avgDaily,
+            budgetUsedPercent: budgetUsedPercent
+        },
+        chartData: { labels: labels, data: cumulativeData, budget: monthlyBudget },
+        navigation: getNavigation(ranges)
+      }
+    };
+}
+
+function handlePerformance(commandText) {
+    var baseDate = parseDateFromCommand(commandText);
+    var ranges = getMonthRanges(baseDate);
+    var data = getSheetData();
+    
+    // Get Current Month Data
+    var currData = { totalIncome: 0, totalExpense: 0, categories: {} };
+    if (data) currData = getReportData(data, ranges.targetStart, ranges.targetEnd);
+    
+    // Get Previous Month Data
+    var prevData = { totalIncome: 0, totalExpense: 0 };
+    if (data) prevData = getReportData(data, ranges.prevStart, ranges.prevEnd);
+
+    var balance = currData.totalIncome - currData.totalExpense;
+    var prevBalance = prevData.totalIncome - prevData.totalExpense;
+    var savingPercent = (currData.totalIncome > 0) ? (balance / currData.totalIncome) * 100 : 0;
+
+    // Compare with Previous Month (Comparison of Saving Amount)
+    var percentDiff = 0;
+    if (prevBalance !== 0) {
+        percentDiff = Math.round(((balance - prevBalance) / Math.abs(prevBalance)) * 100);
+    } else if (balance !== 0) {
+        percentDiff = 100; 
+    }
+    
+    // Sort Categories for Chart
+    var topCategories = [];
+    for (var cat in currData.categories) {
+        topCategories.push({ name: cat, amount: currData.categories[cat] });
+    }
+    topCategories.sort((a, b) => b.amount - a.amount);
+    
+    return {
+        ok: true, type: 'performance',
+        data: {
+            monthName: ranges.targetStart.toLocaleString('id-ID', { month: 'long' }),
+            year: ranges.targetStart.getFullYear(),
+            saving: { amount: balance, percent: savingPercent },
+            comparison: { percentDiff: Math.abs(percentDiff), isMore: percentDiff >= 0 },
+            topCategories: topCategories.slice(0, 5), // Top 5
+            navigation: getNavigation(ranges)
+        }
+    };
+}
+
+function handleGetTransactions(commandText) {
+    var baseDate = parseDateFromCommand(commandText);
+    var ranges = getMonthRanges(baseDate);
+    var data = getSheetData();
+    var reportData = { transactions: [] };
+    if (data) {
+        reportData = getReportData(data, ranges.targetStart, ranges.targetEnd);
+        reportData.transactions.reverse();
+    }
+    return { 
+        ok: true, type: 'transactions', 
+        data: { 
+            transactions: reportData.transactions,
+            navigation: getNavigation(ranges)
+        } 
+    };
+}
+
+// --- UTILS ---
+function getSheetData() {
+  try {
+    var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    var sheet = ss.getSheetByName(SHEET_NAME);
+    if(!sheet) return null;
+    var data = sheet.getDataRange().getValues();
+    if (data.length <= 1) return null;
+    data.shift(); 
+    return data;
+  } catch (e) { return null; }
+}
+
+function getReportData(allData, startDate, endDate) {
+  var totalIncome = 0, totalExpense = 0, transactions = [], categories = {};
+  allData.forEach(row => {
+    var date = new Date(row[0]);
+    if (date >= startDate && date <= endDate) {
+      var type = row[1];
+      var cat = row[2];
+      var amount = parseFloat(row[3]) || 0;
+      transactions.push({ date: Utilities.formatDate(date, Session.getScriptTimeZone(), "yyyy-MM-dd"), type: type, category: cat, amount: amount, note: row[4] });
+      
+      if (type === 'Income') totalIncome += amount;
+      else if (type === 'Expense') {
+          totalExpense += amount;
+          categories[cat] = (categories[cat] || 0) + amount;
+      }
+    }
+  });
+  return { totalIncome, totalExpense, transactions, categories };
+}
+
+function parseDateFromCommand(text) {
+    if(!text) return new Date();
+    var parts = text.split(/\s+/);
+    if (parts.length > 1 && parts[1]) {
+        var d = new Date(parts[1]);
+        if (!isNaN(d.getTime())) return d;
+    }
+    return new Date(); 
+}
+
+function getMonthRanges(baseDate) {
+  var year = baseDate.getFullYear(), month = baseDate.getMonth();
+  return { 
+    targetStart: new Date(year, month, 1), 
+    targetEnd: new Date(year, month + 1, 0),
+    prevStart: new Date(year, month - 1, 1),
+    prevEnd: new Date(year, month, 0)
+  };
+}
+
+function getNavigation(ranges) {
+    var nextMonth = new Date(ranges.targetStart);
+    nextMonth.setMonth(nextMonth.getMonth() + 1);
+    var prevMonth = new Date(ranges.targetStart);
+    prevMonth.setMonth(prevMonth.getMonth() - 1);
+    
+    return {
+         prev: Utilities.formatDate(prevMonth, Session.getScriptTimeZone(), "yyyy-MM-dd"),
+         next: Utilities.formatDate(nextMonth, Session.getScriptTimeZone(), "yyyy-MM-dd"),
+         // Disable next button if next month is in the future relative to today
+         isNextDisabled: nextMonth > new Date()
+    };
+}
+
+function handleSetBudget(text) {
+    var num = parseFloat(text.replace(/[^\d]/g, ""));
+    PropertiesService.getScriptProperties().setProperty("MONTHLY_BUDGET", num.toString());
+    return { ok: true, data: "Budget diupdate." };
+}

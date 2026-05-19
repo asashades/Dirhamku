@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Dirhamku - Money Keeper</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Phosphor Icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Poppins:wght@500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Flatpickr (Datepicker) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/plugins/monthSelect/index.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/plugins/monthSelect/style.css">
+    
+    <!-- Chart JS -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#040720',    // Navy Blue RBTI
+                        secondary: '#FFB800',  // Gold RBTI
+                        tertiary: '#1CBDB3',   // Teal RBTI
+                        light: '#F3F4F6',
+                        danger: '#EF4444',
+                        success: '#10B981'
+                    },
+                    fontFamily: {
+                        heading: ['Poppins', 'sans-serif'],
+                        body: ['Montserrat', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body { font-family: 'Montserrat', sans-serif; background-color: #e2e8f0; color: #1F2937; }
+        h1, h2, h3, h4, h5 { font-family: 'Poppins', sans-serif; }
+        
+        .loader { border: 3px solid rgba(255,255,255,0.3); border-top: 3px solid #FFB800; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; display: inline-block; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        .flatpickr-calendar {
+            font-family: 'Montserrat', sans-serif;
+            border-radius: 16px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+            border: none;
+            z-index: 99999 !important;
+        }
+        .flatpickr-day.selected { background: #040720 !important; border-color: #040720 !important; }
+        
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        .highlighted { background-color: #F3F4F6; border-left: 4px solid #FFB800; }
+        
+        /* Battery Chart Styles */
+        .battery-bar {
+            height: 12px;
+            background-color: #E5E7EB;
+            border-radius: 6px;
+            overflow: hidden;
+            position: relative;
+        }
+        .battery-fill {
+            height: 100%;
+            border-radius: 6px;
+            transition: width 1s ease-in-out;
+        }
+        
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fade-in { animation: fadeIn 0.4s ease-out forwards; }
+    </style>
+</head>
+<body class="bg-gray-200 h-screen flex justify-center items-center overflow-hidden">
+
+    <div class="w-full h-full md:h-[90vh] md:w-[480px] md:rounded-[30px] bg-gray-50 shadow-2xl relative flex flex-col overflow-hidden border border-white/50">
+        
+        <!-- HEADER -->
+        <header class="bg-primary text-white p-6 pb-8 md:rounded-t-[30px] shadow-lg z-20 relative shrink-0">
+            <div class="absolute top-0 right-0 p-4 opacity-10">
+                <i class="ph-fill ph-circles-three text-6xl"></i>
+            </div>
+
+            <div class="flex justify-between items-start mb-4 relative z-10">
+                <div class="flex items-center gap-3">
+                    <div class="bg-white/10 p-2.5 rounded-xl text-secondary border border-white/5 shadow-inner">
+                        <i class="ph-fill ph-wallet text-2xl"></i>
+                    </div>
+                    <div>
+                        <h1 class="font-bold text-lg tracking-wide leading-tight">DIRHAMKU</h1>
+                        <p class="text-[10px] text-tertiary uppercase tracking-wider font-semibold">Money Keeper</p>
+                    </div>
+                </div>
+                
+                <div class="relative group">
+                     <button id="periodBtn" class="flex items-center gap-2 bg-white/10 px-3 py-1.5 rounded-full text-xs hover:bg-white/20 transition border border-white/10 backdrop-blur-sm">
+                        <span id="periodLabel">All Time</span>
+                        <i class="ph-bold ph-caret-down text-secondary"></i>
+                    </button>
+                    <select id="balancePeriod" class="absolute inset-0 opacity-0 w-full cursor-pointer">
+                        <option value="all">All Time</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="relative z-10 mt-2">
+                <p class="text-xs text-gray-400 font-medium mb-1">Total Saldo Saat Ini</p>
+                <h2 id="totalBalanceDisplay" class="text-3xl font-bold text-white tracking-tight break-all font-heading">
+                    <span class="loader"></span>
+                </h2>
+            </div>
+        </header>
+
+        <!-- MAIN CONTENT -->
+        <main class="flex-1 overflow-y-auto p-5 pb-32 relative z-10 bg-gray-50" id="mainContainer">
+            
+            <!-- INPUT CARD -->
+            <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 mb-6 relative -mt-6 z-30">
+                <label class="flex justify-between items-center text-xs font-bold text-primary uppercase mb-3">
+                    <span class="flex items-center gap-2"><i class="ph-fill ph-pencil-simple text-secondary"></i> Input Transaksi</span>
+                </label>
+                
+                <div class="relative w-full">
+                    <input type="text" id="nlInput" 
+                        placeholder="Ketik: + 5jt Gaji atau - 20rb Makan..." 
+                        class="w-full pl-4 pr-12 py-3.5 bg-light border border-transparent rounded-xl text-sm focus:ring-2 focus:ring-secondary focus:bg-white focus:outline-none font-medium text-primary placeholder-gray-400 transition-all shadow-inner"
+                        autocomplete="off">
+                    
+                    <button id="processBtn" class="absolute right-2 top-2 p-2 bg-primary text-white rounded-lg hover:bg-secondary hover:text-primary transition shadow-md group">
+                        <i class="ph-bold ph-paper-plane-right group-hover:scale-110 transition-transform"></i>
+                    </button>
+
+                    <!-- DROPDOWN MENU WRAPPER -->
+                    <div id="menuWrapper" class="absolute left-0 right-0 top-full mt-2 bg-white rounded-xl shadow-2xl border border-gray-100 overflow-hidden hidden z-50 animate-fade-in">
+                        <div id="commandDropdown" class="hidden">
+                            <div class="bg-gray-50 px-4 py-2 text-[10px] font-bold text-gray-400 uppercase tracking-wider border-b">Menu Perintah</div>
+                            <div id="mainCommandList" class="max-h-56 overflow-y-auto"></div>
+                        </div>
+                        <div id="categoryDropdown" class="hidden">
+                            <div class="bg-gray-50 px-4 py-2 text-[10px] font-bold text-gray-400 uppercase tracking-wider border-b">Pilih Kategori</div>
+                            <div id="categoryList" class="max-h-56 overflow-y-auto"></div>
+                        </div>
+                        <div id="dateDropdown" class="hidden">
+                            <div class="bg-gray-50 px-4 py-2 text-[10px] font-bold text-gray-400 uppercase tracking-wider border-b">Pilih Tanggal</div>
+                            <div id="dateButtonList" class="p-2 space-y-1">
+                                <button onclick="insertTag('today, ')" class="w-full text-left px-3 py-2 text-sm hover:bg-yellow-50 hover:text-secondary rounded-lg flex items-center gap-2"><i class="ph-fill ph-sun text-secondary"></i> Hari Ini</button>
+                                <button onclick="insertTag('yesterday, ')" class="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 hover:text-blue-500 rounded-lg flex items-center gap-2"><i class="ph-fill ph-moon text-blue-500"></i> Kemarin</button>
+                                <button id="triggerCalendar" class="w-full text-left px-3 py-2 text-sm hover:bg-teal-50 hover:text-tertiary rounded-lg flex items-center gap-2"><i class="ph-fill ph-calendar text-tertiary"></i> Kalender...</button>
+                            </div>
+                            <div id="calendarContainer" class="hidden p-2 flex justify-center bg-gray-50"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex gap-2 mt-4 overflow-x-auto no-scrollbar pb-1">
+                    <button onclick="triggerShortcut('/')" class="px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-[10px] font-bold text-gray-500 whitespace-nowrap hover:bg-secondary hover:text-primary hover:border-secondary transition active:scale-95">
+                        <span class="text-secondary font-extrabold mr-1 pointer-events-none group-hover:text-primary">/</span> Menu
+                    </button>
+                    <button onclick="triggerShortcut('@')" class="px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-[10px] font-bold text-gray-500 whitespace-nowrap hover:bg-secondary hover:text-primary hover:border-secondary transition active:scale-95">
+                        <span class="text-secondary font-extrabold mr-1 pointer-events-none group-hover:text-primary">@</span> Kategori
+                    </button>
+                    <button onclick="triggerShortcut('~')" class="px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-[10px] font-bold text-gray-500 whitespace-nowrap hover:bg-secondary hover:text-primary hover:border-secondary transition active:scale-95">
+                        <span class="text-secondary font-extrabold mr-1 pointer-events-none group-hover:text-primary">~</span> Tanggal
+                    </button>
+                </div>
+            </div>
+
+            <!-- AREA PREVIEW & REPORTS -->
+            <div id="previewArea" class="space-y-4 min-h-[200px]">
+                <div class="text-center text-gray-400 mt-10 opacity-50">
+                    <i class="ph ph-trend-up text-4xl mb-2"></i>
+                    <p class="text-xs">Siap mencatat keuangan Anda</p>
+                </div>
+            </div>
+
+        </main>
+
+        <!-- FLOATING SAVE BUTTON -->
+        <div id="saveContainer" class="absolute bottom-6 left-0 right-0 px-6 z-40 transform translate-y-32 transition-transform duration-300">
+            <button id="saveBtn" class="w-full bg-secondary text-primary font-bold py-3.5 rounded-xl shadow-xl hover:bg-yellow-400 flex justify-center items-center gap-2 text-sm md:text-base border-b-4 border-yellow-600 active:border-b-0 active:translate-y-1 transition-all">
+                <i class="ph-bold ph-check-circle text-xl"></i> SIMPAN TRANSAKSI
+            </button>
+        </div>
+
+        <!-- WARNING MODAL -->
+        <div id="warningModal" class="absolute inset-0 bg-primary/80 z-[60] hidden flex items-center justify-center p-6 backdrop-blur-sm">
+            <div class="bg-white rounded-2xl w-full max-w-xs p-6 shadow-2xl animate-fade-in">
+                <div class="w-14 h-14 bg-yellow-50 text-secondary rounded-full flex items-center justify-center mb-4 mx-auto ring-4 ring-yellow-50/50">
+                    <i class="ph-fill ph-warning text-3xl"></i>
+                </div>
+                <h3 class="text-lg font-bold text-center text-primary mb-2 font-heading">Cek Kategori</h3>
+                <p class="text-xs text-center text-gray-500 mb-6 leading-relaxed" id="warningText">
+                    Anda mencatat ini sebagai <b>Pengeluaran</b>, tapi kategorinya tampak seperti Pemasukan.
+                </p>
+                <div class="flex flex-col gap-3">
+                    <button id="btnConvertToIncome" class="w-full py-3 bg-tertiary text-white font-bold rounded-xl hover:bg-teal-600 transition shadow-lg shadow-teal-200/50 text-xs">
+                        Ubah jadi Pemasukan (+)
+                    </button>
+                    <button id="btnKeepExpense" class="w-full py-3 bg-gray-100 text-gray-500 font-bold rounded-xl hover:bg-gray-200 transition text-xs">
+                        Tetap Pengeluaran (-)
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- TOAST NOTIFICATION -->
+        <div id="toast" class="absolute top-4 left-1/2 transform -translate-x-1/2 bg-primary text-white px-5 py-2.5 rounded-full shadow-2xl z-[70] text-xs font-bold transition-all duration-300 opacity-0 -translate-y-10 flex items-center gap-2 whitespace-nowrap border border-white/10">
+            <i class="ph-fill ph-info"></i>
+            <span id="toastMsg">Notifikasi</span>
+        </div>
+    </div>
+
+<script>
+    // --- DATA & CONFIG ---
+    const COMMANDS = [
+        { cmd: '/status', label: 'Status Keuangan', icon: 'ph-chart-pie-slice' },
+        { cmd: '/performance', label: 'Laporan Performa', icon: 'ph-chart-line-up' },
+        { cmd: '/transaction', label: 'Lihat Transaksi', icon: 'ph-list-dashes' },
+        { cmd: '/setbudget', label: 'Atur Budget', icon: 'ph-coins' },
+        { cmd: '/help', label: 'Bantuan', icon: 'ph-question' }
+    ];
+
+    const INCOME_CATEGORIES = ['salary', 'gaji', 'bonus', 'thr', 'dividend', 'profit', 'laba', 'penjualan'];
+
+    const CATEGORY_MAP_CLIENT = {
+      "food": "Food", "makan": "Food", "drink": "Food", "coffee": "Food", "bakso": "Food",
+      "transport": "Transport", "bensin": "Transport", "gojek": "Transport",
+      "bills": "Bills", "listrik": "Bills", "pulsa": "Bills",
+      "rent": "Housing", "kos": "Housing", "housing": "Housing",
+      "health": "Health", "obat": "Health",
+      "education": "Education", "buku": "Education",
+      "shopping": "Shopping", "baju": "Shopping", "belanja": "Shopping",
+      "entertainment": "Entertainment", "nonton": "Entertainment",
+      "social": "Social", "sedekah": "Social",
+      "finance": "Finance", "admin": "Finance",
+      "salary": "Salary", "gaji": "Salary", "bonus": "Bonus", "thr": "Bonus"
+    };
+    const UNIQUE_CATEGORIES = [...new Set(Object.values(CATEGORY_MAP_CLIENT))].sort();
+
+    // --- DOM REFERENCES ---
+    const nlInput = document.getElementById('nlInput');
+    const processBtn = document.getElementById('processBtn');
+    const previewArea = document.getElementById('previewArea');
+    const saveBtn = document.getElementById('saveBtn');
+    const saveContainer = document.getElementById('saveContainer');
+    const menuWrapper = document.getElementById('menuWrapper');
+    const warningModal = document.getElementById('warningModal');
+
+    // --- STATE ---
+    let parsedTransaction = null;
+    let balanceData = {};
+    let activeDropdown = null;
+    let activeIndex = -1;
+    let statusChart = null; 
+    let performanceChart = null;
+
+    // --- MOCK BACKEND (Robust V2) ---
+    if (typeof google === 'undefined') {
+        const mockFunctions = {
+            handleCommand: (cmd, onSuccess) => {
+                setTimeout(() => {
+                    if(!onSuccess) return;
+                    if(cmd.includes('/status')) {
+                        onSuccess({
+                            type: 'status',
+                            data: {
+                                monthName: 'Januari', year: 2026,
+                                stats: { remainingBudget: 1500000, avgDaily: 125000, budgetUsedPercent: 65.5, remainingDays: 23 },
+                                chartData: { labels: [1,5,10,15,20,25,30], data: [100,500,1000,1500,2000,2500,3000], budget: 5000000 },
+                                navigation: { prev: '2025-12-01', next: '2026-02-01' }
+                            }
+                        });
+                    } else if (cmd.includes('/performance')) {
+                        onSuccess({
+                            type: 'performance',
+                            data: {
+                                monthName: 'Januari', year: 2026,
+                                saving: { amount: 2500000, percent: 35.0 },
+                                comparison: { percentDiff: 15, isMore: true },
+                                topCategories: [
+                                    { name: 'Food', amount: 1200000, percent: 45 }, 
+                                    { name: 'Transport', amount: 800000, percent: 30 },
+                                    { name: 'Bills', amount: 400000, percent: 15 },
+                                    { name: 'Ent.', amount: 266666, percent: 10 }
+                                ],
+                                navigation: { prev: '2025-12-01', next: '2026-02-01' }
+                            }
+                        });
+                    } else if (cmd.includes('/transaction')) {
+                        onSuccess({ type: 'transactions', data: { transactions: [{date:'2026-01-20', type:'Expense', category:'Food', amount:50000, note:'Makan'}], navigation: { prev: '2025-12-01', next: '2026-02-01' } } });
+                    } else {
+                        onSuccess({ type: 'text', data: 'Mock data: ' + cmd });
+                    }
+                }, 500);
+            },
+            getBalanceData: (onSuccess) => {
+                 setTimeout(() => onSuccess && onSuccess({ ok:true, totalBalance: 15750000, monthlyData: { 'all':{label:'All Time', balance:15750000} } }), 500);
+            },
+            appendTransaction: (data, onSuccess) => {
+                setTimeout(() => onSuccess && onSuccess({ ok:true }), 1000);
+            }
+        };
+
+        const createRunner = (successHandler, failureHandler) => {
+            const runner = {};
+            Object.keys(mockFunctions).forEach(fnName => { runner[fnName] = (...args) => { mockFunctions[fnName](...args, successHandler); }; });
+            runner.withSuccessHandler = (fn) => createRunner(fn, failureHandler);
+            runner.withFailureHandler = (fn) => createRunner(successHandler, fn);
+            return runner;
+        };
+        window.google = { script: { run: createRunner(null, null) } };
+    }
+
+    // --- INIT ---
+    window.onload = function() {
+        loadBalanceData();
+        initDropdowns();
+        if (typeof flatpickr !== 'undefined') {
+            flatpickr("#calendarContainer", {
+                inline: true, dateFormat: "Y-m-d",
+                onChange: (d, str) => { insertTag(str + ', '); hideMenus(); }
+            });
+        }
+    };
+
+    window.triggerShortcut = function(char) {
+        const input = nlInput;
+        const start = input.selectionStart;
+        const text = input.value;
+        const before = text.substring(0, start);
+        const after = text.substring(start, text.length);
+        const prefix = (before.length > 0 && !before.endsWith(' ')) ? ' ' : '';
+        input.value = before + prefix + char + after;
+        const newPos = start + prefix.length + char.length;
+        input.selectionStart = newPos;
+        input.selectionEnd = newPos;
+        input.focus();
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    // --- DROPDOWN & INPUT ---
+    function initDropdowns() {
+        const cmdContainer = document.getElementById('mainCommandList');
+        COMMANDS.forEach(c => {
+            const btn = document.createElement('button');
+            btn.className = "w-full text-left px-4 py-3 text-sm text-gray-600 hover:bg-light hover:text-primary flex items-center justify-between group transition-colors border-b border-gray-50 last:border-0";
+            btn.innerHTML = `<div class="flex items-center gap-3"><i class="ph-fill ${c.icon} text-secondary text-lg"></i> <span class="font-medium">${c.label}</span></div> <span class="text-[10px] font-mono bg-gray-100 px-2 py-1 rounded text-gray-400 group-hover:text-primary transition">${c.cmd}</span>`;
+            btn.onclick = () => { replaceTriggerWord(c.cmd); hideMenus(); };
+            cmdContainer.appendChild(btn);
+        });
+
+        const catContainer = document.getElementById('categoryList');
+        UNIQUE_CATEGORIES.forEach(cat => {
+            const btn = document.createElement('button');
+            btn.className = "w-full text-left px-4 py-2.5 text-sm text-gray-600 hover:bg-light hover:text-primary flex items-center justify-between transition-colors border-b border-gray-50 last:border-0";
+            btn.innerHTML = `<span class="font-medium">${cat}</span>`;
+            btn.onclick = () => { replaceTriggerWord(cat + " "); hideMenus(); };
+            catContainer.appendChild(btn);
+        });
+
+        document.getElementById('triggerCalendar').onclick = () => {
+            document.getElementById('dateButtonList').classList.add('hidden');
+            document.getElementById('calendarContainer').classList.remove('hidden');
+        };
+    }
+
+    function replaceTriggerWord(newText) {
+        const val = nlInput.value;
+        const cursor = nlInput.selectionStart;
+        const textBefore = val.substring(0, cursor);
+        const lastSlash = textBefore.lastIndexOf('/');
+        const lastAt = textBefore.lastIndexOf('@');
+        const lastTilde = textBefore.lastIndexOf('~');
+        const triggerPos = Math.max(lastSlash, lastAt, lastTilde);
+
+        if (triggerPos === -1) {
+            nlInput.value += newText; 
+        } else {
+            const textAfter = val.substring(cursor);
+            if(val[triggerPos] === '/' && triggerPos === 0) {
+                 nlInput.value = newText + " ";
+            } else {
+                 const beforeTrigger = val.substring(0, triggerPos);
+                 nlInput.value = beforeTrigger + newText + textAfter;
+            }
+        }
+        nlInput.focus();
+    }
+
+    function insertTag(text) {
+        const val = nlInput.value;
+        if (val.match(/^\d{4}-\d{2}-\d{2},/)) nlInput.value = val.replace(/^\d{4}-\d{2}-\d{2},/, text);
+        else if (val.toLowerCase().startsWith('today,')) nlInput.value = val.replace(/^today,\s*/i, text);
+        else if (val.toLowerCase().startsWith('yesterday,')) nlInput.value = val.replace(/^yesterday,\s*/i, text);
+        else replaceTriggerWord(text); 
+        hideMenus(); nlInput.focus();
+    }
+
+    function hideMenus() {
+        menuWrapper.classList.add('hidden');
+        document.getElementById('commandDropdown').classList.add('hidden');
+        document.getElementById('categoryDropdown').classList.add('hidden');
+        document.getElementById('dateDropdown').classList.add('hidden');
+        document.getElementById('calendarContainer').classList.add('hidden');
+        document.getElementById('dateButtonList').classList.remove('hidden');
+        activeDropdown = null; activeIndex = -1;
+    }
+
+    nlInput.addEventListener('input', () => {
+        const val = nlInput.value;
+        const cursor = nlInput.selectionStart;
+        const textBefore = val.substring(0, cursor);
+        const lastSlash = textBefore.lastIndexOf('/');
+        const lastAt = textBefore.lastIndexOf('@');
+        const lastTilde = textBefore.lastIndexOf('~');
+        const maxPos = Math.max(lastSlash, lastAt, lastTilde);
+        
+        if (maxPos === -1) { hideMenus(); return; }
+        const charBefore = maxPos > 0 ? textBefore[maxPos - 1] : ' ';
+        if (charBefore !== ' ' && charBefore !== ',' && maxPos !== 0) { hideMenus(); return; }
+
+        const trigger = textBefore[maxPos];
+        const query = textBefore.substring(maxPos + 1).toLowerCase();
+
+        menuWrapper.classList.remove('hidden');
+        document.getElementById('commandDropdown').classList.add('hidden');
+        document.getElementById('categoryDropdown').classList.add('hidden');
+        document.getElementById('dateDropdown').classList.add('hidden');
+
+        if (trigger === '/') {
+            filterList('mainCommandList', query);
+            document.getElementById('commandDropdown').classList.remove('hidden');
+            activeDropdown = 'command';
+        } else if (trigger === '@') {
+            filterList('categoryList', query);
+            document.getElementById('categoryDropdown').classList.remove('hidden');
+            activeDropdown = 'category';
+        } else if (trigger === '~') {
+            document.getElementById('dateDropdown').classList.remove('hidden');
+            activeDropdown = 'date';
+        }
+    });
+
+    function filterList(id, query) {
+        const container = document.getElementById(id);
+        const buttons = container.querySelectorAll('button');
+        buttons.forEach(btn => {
+            const txt = btn.innerText.toLowerCase();
+            btn.style.display = txt.includes(query) ? 'flex' : 'none';
+        });
+    }
+
+    nlInput.addEventListener('keydown', (e) => {
+        if (!activeDropdown || menuWrapper.classList.contains('hidden')) {
+            if (e.key === 'Enter') { e.preventDefault(); handleInput(); } return;
+        }
+        if (e.key === 'Escape') hideMenus();
+    });
+
+    processBtn.addEventListener('click', handleInput);
+
+    // --- PARSING & HANDLERS ---
+    function handleInput() {
+        hideMenus();
+        const text = nlInput.value.trim();
+        if(!text) return showToast('Input kosong', true);
+
+        if(text.startsWith('/')) {
+            handleCommand(text);
+        } else {
+            const res = parseNL(text);
+            if(!res) return showToast('Format salah', true);
+            if(res.type === 'Expense' && isIncomeCategory(res.category)) showWarningModal(res);
+            else showPreview(res);
+        }
+    }
+
+    function isIncomeCategory(cat) {
+        if(!cat) return false;
+        const lower = cat.toLowerCase();
+        return INCOME_CATEGORIES.some(inc => lower.includes(inc) || (CATEGORY_MAP_CLIENT[inc] && CATEGORY_MAP_CLIENT[inc].toLowerCase() === lower));
+    }
+
+    function parseNL(text) {
+        // 1. Expand keywords (Moved Date extraction logic here to ensure order)
+        let clean = text.replace(/today/i, new Date().toISOString().split('T')[0])
+                        .replace(/yesterday/i, new Date(Date.now() - 864e5).toISOString().split('T')[0])
+                        .replace(/~/, '');
+        
+        // 2. Handle explicit category shortcuts
+        const atMatch = clean.match(/@([\w-]+)/);
+        if(atMatch && atMatch[1] && CATEGORY_MAP_CLIENT[atMatch[1].toLowerCase()]) 
+            clean = clean.replace(atMatch[0], CATEGORY_MAP_CLIENT[atMatch[1].toLowerCase()]);
+        
+        // 3. EXTRACT DATE FIRST (Fix for date getting corrupted by '-' check)
+        let date = new Date();
+        // Regex to capture date at the beginning of string
+        const dateMatch = clean.match(/^(\d{4}-\d{2}-\d{2})/);
+        if(dateMatch) {
+            date = new Date(dateMatch[1]);
+            // Remove the date string
+            clean = clean.replace(dateMatch[0], '');
+            // Clean up any remaining leading comma/space
+            clean = clean.replace(/^[\s,]+/, '').trim();
+        }
+
+        // 4. Determine Type (+/-) AFTER date extraction
+        let type = 'Expense';
+        if (clean.includes('+')) { type = 'Income'; clean = clean.replace('+', ''); }
+        else if (clean.includes('-')) { type = 'Expense'; clean = clean.replace('-', ''); }
+
+        // 5. Parse Amount, Category, Notes
+        const parts = clean.split(/[\s,]+/);
+        let amount = 0, note = [];
+        parts.forEach(p => {
+            const num = p.replace(/\./g, '').replace(',', '.');
+            if(!isNaN(num) && num !== '' && amount === 0) amount = parseFloat(num);
+            else if(p.length > 0) note.push(p);
+        });
+
+        if(amount === 0) return null;
+        let cat = 'Others';
+        let finalNote = [];
+        note.forEach(w => {
+            const mapped = CATEGORY_MAP_CLIENT[w.toLowerCase()];
+            if(mapped) cat = mapped; 
+            else finalNote.push(w);
+        });
+
+        return { date: date, type: type, amount: amount, category: cat, note: finalNote.join(' ') || cat };
+    }
+
+    // --- UI RENDERERS ---
+    function showPreview(data) {
+        parsedTransaction = data;
+        const isInc = data.type === 'Income';
+        const html = `
+        <div class="bg-white p-6 rounded-2xl shadow-lg border-l-4 ${isInc ? 'border-success' : 'border-danger'} animate-fade-in relative overflow-hidden">
+            <div class="absolute top-0 right-0 p-4 opacity-5 pointer-events-none"><i class="ph-fill ph-receipt text-6xl"></i></div>
+            <div class="flex items-center justify-between mb-6">
+                <div>
+                    <p class="text-[10px] uppercase font-bold text-gray-400 tracking-widest mb-1">Preview</p>
+                    <h2 class="text-3xl font-bold ${isInc ? 'text-success' : 'text-primary'} font-heading">Rp ${numberFormat(data.amount)}</h2>
+                </div>
+                <div class="w-12 h-12 rounded-full ${isInc ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'} flex items-center justify-center text-2xl shadow-sm"><i class="ph-bold ${isInc ? 'ph-arrow-up' : 'ph-arrow-down'}"></i></div>
+            </div>
+            <div class="grid grid-cols-2 gap-4 text-sm">
+                <div class="bg-light p-3 rounded-xl border border-transparent hover:border-secondary/30 transition">
+                    <p class="text-[10px] text-gray-500 uppercase font-bold mb-1">Kategori</p>
+                    <p class="font-bold text-primary flex items-center gap-1.5"><i class="ph-fill ph-tag text-secondary"></i> ${data.category}</p>
+                </div>
+                <div class="bg-light p-3 rounded-xl border border-transparent hover:border-secondary/30 transition">
+                    <p class="text-[10px] text-gray-500 uppercase font-bold mb-1">Tanggal</p>
+                    <p class="font-bold text-primary flex items-center gap-1.5"><i class="ph-fill ph-calendar-blank text-tertiary"></i> ${data.date.toLocaleDateString('id-ID', {day:'numeric', month:'short'})}</p>
+                </div>
+            </div>
+            ${data.note ? `<div class="mt-4 p-3 bg-yellow-50 rounded-xl border border-yellow-100 text-xs text-yellow-800 flex gap-2 items-start"><i class="ph-fill ph-note text-yellow-500 mt-0.5"></i><span class="font-medium italic">"${data.note}"</span></div>` : ''}
+        </div>`;
+        previewArea.innerHTML = html;
+        saveContainer.classList.remove('translate-y-32');
+    }
+
+    function handleCommand(cmd) {
+        previewArea.innerHTML = `<div class="bg-white p-6 rounded-2xl text-center shadow-sm"><div class="loader"></div><p class="text-xs text-gray-400 mt-2 font-bold">Memuat data...</p></div>`;
+        hideMenus(); saveContainer.classList.add('translate-y-32');
+        google.script.run.withSuccessHandler(res => {
+            if(res.type === 'status') renderStatusReport(res.data);
+            else if (res.type === 'performance') renderPerformanceReport(res.data);
+            else if (res.type === 'transactions') renderTransactionsReport(res.data);
+            else previewArea.innerHTML = `<div class="bg-white p-5 rounded-2xl shadow-sm text-sm text-gray-600">${res.data}</div>`;
+        }).handleCommand(cmd);
+    }
+
+    function renderNavButtons(cmdType, nav) {
+        return `
+        <div class="flex gap-2">
+            <button onclick="handleCommand('/${cmdType} ${nav.prev}')" class="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition"><i class="ph-bold ph-caret-left"></i></button>
+            <button onclick="handleCommand('/${cmdType} ${nav.next}')" class="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition" ${nav.isNextDisabled ? 'disabled style="opacity:0.3"' : ''}><i class="ph-bold ph-caret-right"></i></button>
+        </div>`;
+    }
+
+    function renderStatusReport(data) {
+        const { monthName, year, stats, chartData, navigation } = data;
+        const dailySuggestion = stats.remainingDays > 0 ? (stats.remainingBudget / stats.remainingDays) : 0;
+
+        const html = `
+        <div class="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden animate-fade-in">
+            <div class="bg-primary p-4 flex justify-between items-center text-white">
+                <div>
+                    <h3 class="font-bold font-heading text-lg">Status: ${monthName} ${year}</h3>
+                    <span class="text-[10px] bg-white/10 px-2 py-0.5 rounded">Budget Tracker</span>
+                </div>
+                ${renderNavButtons('status', navigation)}
+            </div>
+            <div class="p-5">
+                 <div class="grid grid-cols-2 gap-4 mb-4">
+                    <div class="bg-light p-3 rounded-xl text-center">
+                        <p class="text-[10px] text-gray-400 font-bold uppercase mb-1">Rata-rata/Hari</p>
+                        <p class="text-xl font-bold text-primary">Rp ${numberFormat(stats.avgDaily)}</p>
+                    </div>
+                    <div class="bg-light p-3 rounded-xl text-center">
+                        <p class="text-[10px] text-gray-400 font-bold uppercase mb-1">Sisa Budget</p>
+                        <p class="text-xl font-bold ${stats.remainingBudget < 0 ? 'text-danger' : 'text-success'}">Rp ${numberFormat(stats.remainingBudget)}</p>
+                    </div>
+                 </div>
+                 
+                 <div class="bg-yellow-50 border border-yellow-100 p-4 rounded-xl text-center mb-6">
+                    <p class="text-[10px] text-yellow-600 font-bold uppercase mb-1">Saran Pengeluaran Harian</p>
+                    <p class="text-lg font-bold text-yellow-700">Rp ${numberFormat(Math.round(dailySuggestion))}</p>
+                    <p class="text-[10px] text-yellow-600 mt-1">untuk ${stats.remainingDays} hari ke depan</p>
+                 </div>
+                 
+                 <!-- Chart with unique ID -->
+                 <div class="h-48 relative w-full">
+                    <canvas id="statusChartCanvas"></canvas>
+                 </div>
+            </div>
+        </div>`;
+        previewArea.innerHTML = html;
+
+        // Gunakan variabel chart terpisah
+        if(statusChart) statusChart.destroy();
+        
+        const ctx = document.getElementById('statusChartCanvas').getContext('2d');
+        let gradient = ctx.createLinearGradient(0, 0, 0, 200);
+        gradient.addColorStop(0, 'rgba(28, 189, 179, 0.4)');
+        gradient.addColorStop(1, 'rgba(28, 189, 179, 0.0)');
+
+        statusChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: chartData.labels,
+                datasets: [{
+                    label: 'Pengeluaran',
+                    data: chartData.data,
+                    borderColor: '#1CBDB3',
+                    backgroundColor: gradient,
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 0
+                }, {
+                    label: 'Budget',
+                    data: Array(chartData.labels.length).fill(chartData.budget),
+                    borderColor: '#FFB800',
+                    borderDash: [5, 5],
+                    fill: false,
+                    pointRadius: 0,
+                    borderWidth: 1
+                }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { display: false }, y: { display: false } }, elements: { point: { radius: 0 } } }
+        });
+    }
+
+    function renderPerformanceReport(data) {
+        const { monthName, year, saving, comparison, topCategories, navigation } = data;
+        
+        // Generate Battery Items
+        const batteryListHtml = topCategories.map((cat, index) => {
+            // Calculate a dummy percent if not provided, just for visualization safety
+            const percent = cat.percent || 0;
+            // Colors based on index
+            const colors = ['bg-primary', 'bg-tertiary', 'bg-secondary', 'bg-gray-400', 'bg-gray-300'];
+            const barColor = colors[index % colors.length];
+
+            return `
+            <div class="flex items-center gap-3 mb-3 last:mb-0">
+                 <div class="w-8 h-8 rounded-full bg-light flex items-center justify-center text-lg shrink-0">
+                    <i class="ph-fill ph-tag text-gray-500"></i>
+                 </div>
+                 <div class="flex-1">
+                    <div class="flex justify-between text-xs mb-1">
+                       <span class="font-bold text-primary">${cat.name}</span>
+                       <span class="text-gray-500">Rp ${numberFormat(cat.amount)}</span>
+                    </div>
+                    <!-- Battery Bar -->
+                    <div class="battery-bar w-full">
+                       <div class="battery-fill ${barColor}" style="width: ${percent}%"></div>
+                    </div>
+                 </div>
+            </div>`;
+        }).join('');
+
+        const html = `
+        <div class="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden animate-fade-in">
+             <div class="bg-primary p-4 flex justify-between items-center text-white">
+                <div>
+                    <h3 class="font-bold font-heading text-lg">Performa: ${monthName} ${year}</h3>
+                </div>
+                ${renderNavButtons('performance', navigation)}
+            </div>
+            
+            <div class="p-6">
+                <!-- Half Donut Section -->
+                <div class="flex flex-col items-center mb-6">
+                    <div class="relative w-48 h-24 mb-6">
+                        <canvas id="performanceGaugeCanvas"></canvas>
+                        <div class="absolute inset-x-0 bottom-0 text-center -mb-2">
+                            <span class="text-2xl font-bold text-primary">${saving.percent.toFixed(1)}%</span>
+                            <p class="text-[10px] text-gray-400 uppercase">Saving Rate</p>
+                        </div>
+                    </div>
+
+                    <p class="text-sm text-gray-600 leading-relaxed text-center">
+                        Di <b>${monthName} ${year}</b> Anda menyimpan <b class="text-secondary">Rp ${numberFormat(saving.amount)}</b>, setara dengan <b>${saving.percent.toFixed(1)}%</b> dari pemasukan Anda, <span class="${comparison.isMore ? 'text-green-600' : 'text-red-500'} font-bold">${comparison.percentDiff}% lebih ${comparison.isMore ? 'banyak' : 'sedikit'}</span> dari bulan lalu.
+                    </p>
+                </div>
+
+                <hr class="border-gray-100 mb-6">
+
+                <!-- Battery Chart Section -->
+                <div>
+                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">Pengeluaran per Kategori</h4>
+                    <div class="space-y-1">
+                        ${batteryListHtml}
+                    </div>
+                </div>
+            </div>
+        </div>`;
+        previewArea.innerHTML = html;
+
+        // Gunakan variabel chart terpisah
+        if(performanceChart) performanceChart.destroy();
+        
+        const savingRate = Math.min(Math.max(saving.percent, 0), 100); 
+        const remaining = 100 - savingRate;
+        
+        const ctx = document.getElementById('performanceGaugeCanvas').getContext('2d');
+        performanceChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Saved', 'Spent'],
+                datasets: [{
+                    data: [savingRate, remaining],
+                    backgroundColor: ['#1CBDB3', '#E5E7EB'],
+                    borderWidth: 0,
+                    cutout: '75%',
+                }]
+            },
+            options: {
+                rotation: -90,
+                circumference: 180,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false }, tooltip: { enabled: false } }
+            }
+        });
+    }
+
+    function renderTransactionsReport(data) {
+        if(!data.transactions || data.transactions.length === 0) {
+            previewArea.innerHTML = `<div class="p-8 text-center text-gray-400">Belum ada transaksi.</div>`; return;
+        }
+        const html = data.transactions.map(tx => {
+            const isInc = tx.type === 'Income';
+            return `
+            <div class="flex justify-between items-center py-3 border-b border-gray-50 last:border-0 hover:bg-gray-50 transition px-2 rounded-lg">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-full ${isInc ? 'bg-success/10 text-success' : 'bg-primary/10 text-primary'} flex items-center justify-center text-lg">
+                        <i class="ph-bold ${isInc ? 'ph-arrow-up' : 'ph-arrow-down'}"></i>
+                    </div>
+                    <div>
+                        <div class="font-bold text-sm text-primary line-clamp-1">${tx.note || tx.category}</div>
+                        <div class="text-[10px] text-gray-400 flex gap-1 items-center">
+                            <span class="bg-gray-100 px-1.5 rounded text-gray-500">${tx.category}</span>
+                            <span>${tx.date}</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="${isInc ? 'text-success' : 'text-primary'} font-bold text-sm">${isInc ? '+' : '-'} ${numberFormat(tx.amount)}</div>
+            </div>`;
+        }).join('');
+        
+        previewArea.innerHTML = `
+        <div class="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden animate-fade-in">
+             <div class="bg-primary p-4 flex justify-between items-center text-white">
+                h3 class="font-bold font-heading text-lg">Transaksi</h3>
+                ${renderNavButtons('transaction', data.navigation)}
+            </div>
+            <div class="p-4 max-h-96 overflow-y-auto custom-scroll">${html}</div>
+        </div>`;
+    }
+
+    function showWarningModal(data) {
+        parsedTransaction = data;
+        document.getElementById('warningText').innerHTML = `Anda memasukkan <b>${data.category}</b> sebesar <b>Rp ${numberFormat(data.amount)}</b> sebagai <span class="text-red-500 font-bold">Pengeluaran</span>.<br>Biasanya ini adalah Pemasukan.`;
+        warningModal.classList.remove('hidden');
+        document.getElementById('btnConvertToIncome').onclick = () => { data.type = 'Income'; warningModal.classList.add('hidden'); showPreview(data); };
+        document.getElementById('btnKeepExpense').onclick = () => { warningModal.classList.add('hidden'); showPreview(data); };
+    }
+
+    saveBtn.addEventListener('click', () => {
+        if(!parsedTransaction) return;
+        const originalText = saveBtn.innerHTML;
+        saveBtn.innerHTML = '<span class="loader"></span> Menyimpan...'; saveBtn.disabled = true;
+        const payload = { ...parsedTransaction, date: parsedTransaction.date.toISOString().split('T')[0] };
+        google.script.run.withSuccessHandler((res) => {
+            saveBtn.innerHTML = originalText; saveBtn.disabled = false;
+            if(res.ok) { showToast('Transaksi Berhasil Disimpan!'); saveContainer.classList.add('translate-y-32'); previewArea.innerHTML = ''; nlInput.value = ''; parsedTransaction = null; loadBalanceData(); }
+            else showToast('Gagal: ' + res.error, true);
+        }).appendTransaction(payload);
+    });
+
+    function loadBalanceData() {
+        google.script.run.withSuccessHandler(res => {
+            if(res.ok) {
+                balanceData = res; updateBalanceDisplay('all');
+                const select = document.getElementById('balancePeriod');
+                select.innerHTML = '<option value="all">All Time</option>';
+                Object.keys(res.monthlyData).forEach(k => {
+                    const opt = document.createElement('option'); opt.value = k; opt.textContent = res.monthlyData[k].label; select.appendChild(opt);
+                });
+            }
+        }).getBalanceData();
+    }
+    
+    document.getElementById('balancePeriod').addEventListener('change', (e) => {
+        const val = e.target.value;
+        const label = e.target.options[e.target.selectedIndex].text;
+        document.getElementById('periodLabel').innerText = label; updateBalanceDisplay(val);
+    });
+
+    function updateBalanceDisplay(period) {
+        let amount = 0;
+        if(period === 'all') amount = balanceData.totalBalance || 0;
+        else if(balanceData.monthlyData && balanceData.monthlyData[period]) amount = balanceData.monthlyData[period].balance || 0;
+        document.getElementById('totalBalanceDisplay').innerText = `Rp ${numberFormat(amount)}`;
+    }
+
+    function showToast(msg, isError = false) {
+        const toast = document.getElementById('toast');
+        document.getElementById('toastMsg').innerText = msg;
+        toast.className = `absolute top-4 left-1/2 transform -translate-x-1/2 px-5 py-2.5 rounded-full shadow-2xl z-[70] text-xs font-bold transition-all duration-300 flex items-center gap-2 whitespace-nowrap border border-white/10 ${isError ? 'bg-danger text-white' : 'bg-primary text-white'}`;
+        toast.classList.remove('-translate-y-10', 'opacity-0');
+        setTimeout(() => toast.classList.add('-translate-y-10', 'opacity-0'), 3000);
+    }
+    function numberFormat(num) { return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, "."); }
+
+</script>
+</body>
+</html>

@@ -1,0 +1,59 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Users can only access their own data
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+
+      // Validate user profile writes
+      allow create: if request.auth != null && request.auth.uid == userId
+        && request.resource.data.keys().hasAll(['email', 'monthlyBudget', 'createdAt'])
+        && request.resource.data.monthlyBudget is number;
+
+      allow update: if request.auth != null && request.auth.uid == userId;
+
+      // Transactions subcollection
+      match /transactions/{transactionId} {
+        allow read: if request.auth != null && request.auth.uid == userId;
+
+        allow create: if request.auth != null && request.auth.uid == userId
+          && request.resource.data.keys().hasAll(['date', 'type', 'amount'])
+          && request.resource.data.type in ['Income', 'Expense', 'Transfer']
+          && request.resource.data.amount is number
+          && request.resource.data.amount > 0;
+
+        allow update: if request.auth != null && request.auth.uid == userId;
+        allow delete: if request.auth != null && request.auth.uid == userId;
+      }
+
+      // Recurring Transactions subcollection
+      match /recurring_transactions/{recurringId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+
+    // Daily logs - require user_id filter for list queries
+    match /daily_logs/{docId} {
+      allow get: if request.auth != null;
+      allow list: if request.auth != null
+        && resource.data.user_id == request.auth.uid;
+      allow create: if request.auth != null
+        && request.resource.data.user_id == request.auth.uid;
+      allow update, delete: if request.auth != null
+        && resource.data.user_id == request.auth.uid;
+    }
+
+    // App metadata - public read for all authenticated users (for update checker)
+    match /app_metadata/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // Deny all other access
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

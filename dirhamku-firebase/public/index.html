@@ -1,0 +1,2061 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Dirhamku - Money Keeper</title>
+    <meta name="theme-color" content="#040720">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="apple-touch-icon" href="/icons/icon-192.svg">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Dirhamku">
+
+    <!-- Tailwind CSS (compiled) -->
+    <link rel="stylesheet" href="/styles.css?v=5.0.1">
+    <!-- Phosphor Icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Poppins:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Flatpickr -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/plugins/monthSelect/index.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/plugins/monthSelect/style.css">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- Firebase SDK (Compat) -->
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+
+
+
+    <style>
+        body { font-family: 'Montserrat', sans-serif; background-color: #e2e8f0; color: #1F2937; }
+        h1, h2, h3, h4, h5 { font-family: 'Poppins', sans-serif; }
+        .loader { border: 3px solid rgba(255,255,255,0.3); border-top: 3px solid #FFB800; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; display: inline-block; }
+        .loader-dark { border: 3px solid rgba(0,0,0,0.1); border-top: 3px solid #040720; border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite; display: inline-block; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .flatpickr-calendar { font-family: 'Montserrat', sans-serif; border-radius: 16px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); border: none; z-index: 99999 !important; }
+        .flatpickr-day.selected { background: #040720 !important; border-color: #040720 !important; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .battery-bar { height: 12px; background-color: #E5E7EB; border-radius: 6px; overflow: hidden; }
+        .battery-fill { height: 100%; border-radius: 6px; transition: width 1s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fade-in { animation: fadeIn 0.4s ease-out forwards; }
+        @keyframes streakFlicker {
+            0% { transform: scale(1) rotate(-3deg); opacity: 0.7; }
+            50% { transform: scale(1.15) rotate(3deg); opacity: 1; }
+            100% { transform: scale(1) rotate(-3deg); opacity: 0.8; }
+        }
+        .auth-input { width: 100%; padding: 12px 16px; background: #F3F4F6; border: 2px solid transparent; border-radius: 12px; font-size: 14px; font-weight: 500; color: #040720; outline: none; transition: all 0.2s; }
+        .auth-input:focus { border-color: #FFB800; background: white; }
+        .auth-input::placeholder { color: #9CA3AF; }
+        .momentum-scroll { -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; touch-action: pan-y; }
+        * { -webkit-tap-highlight-color: transparent; }
+        .tx-summary-card { user-select: none; -webkit-user-select: none; cursor: pointer; transition: opacity 0.2s; -webkit-touch-callout: none; }
+        .tx-summary-card::selection, .tx-summary-card *::selection { background: transparent; color: inherit; }
+        .tx-summary-card:focus, .tx-summary-card:active { outline: none; background-color: inherit; }
+
+        /* ── Chat Rich Formatting ── */
+        .chat-money { color: #059669; font-weight: 700; }
+        .chat-pct { color: #6366F1; font-weight: 700; background: #EEF2FF; padding: 0 3px; border-radius: 4px; }
+        .chat-bot-inner { background: white; color: #374151; border-radius: 16px 16px 16px 4px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); max-width: 90%; flex: 1; overflow: hidden; }
+        .chat-bot-content { padding: 10px 12px; font-size: 13px; font-weight: 500; line-height: 1.55; }
+        .chat-bot-content ul { list-style: disc; padding-left: 16px; margin: 4px 0; }
+        .chat-bot-content li { margin: 2px 0; }
+        .chat-bot-toolbar { display: flex; align-items: center; justify-content: flex-end; gap: 4px; padding: 4px 10px 6px; border-top: 1px solid #f3f4f6; }
+        .chat-copy-btn { display: inline-flex; align-items: center; gap: 3px; padding: 3px 8px; border-radius: 8px; font-size: 10px; font-weight: 600; color: #9CA3AF; background: transparent; border: none; cursor: pointer; transition: all 0.15s; }
+        .chat-copy-btn:hover, .chat-copy-btn:active { background: #f3f4f6; color: #374151; }
+        .chat-copy-btn.copied { color: #10B981; }
+        /* Prompt Chips */
+        .prompt-chip { display: inline-flex; align-items: center; gap: 4px; padding: 6px 13px; background: white; border: 1.5px solid #e5e7eb; border-radius: 999px; font-size: 11px; font-weight: 600; color: #040720; cursor: pointer; transition: all 0.15s; white-space: nowrap; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+        .prompt-chip:hover { background: #040720; color: white; border-color: #040720; transform: translateY(-1px); }
+        .prompt-chip:active { transform: scale(0.96); }
+    </style>
+</head>
+
+<body class="bg-gray-200 h-screen flex justify-center items-center overflow-hidden">
+
+    <!-- ==================== AUTH SCREEN ==================== -->
+    <div id="authScreen" class="w-full h-full md:h-[90vh] md:w-[480px] md:rounded-[30px] bg-primary shadow-2xl relative flex flex-col items-center justify-center overflow-hidden border border-white/10 p-6 hidden">
+        
+        <!-- Decorations -->
+        <div class="absolute inset-0 overflow-hidden pointer-events-none">
+            <div class="absolute top-20 -right-20 w-60 h-60 bg-secondary/5 rounded-full"></div>
+            <div class="absolute -bottom-10 -left-10 w-40 h-40 bg-tertiary/5 rounded-full"></div>
+            <div class="absolute top-8 right-8 opacity-10"><i class="ph-fill ph-circles-three text-6xl text-white"></i></div>
+        </div>
+
+        <!-- Brand -->
+        <div class="text-center mb-8 relative z-10">
+            <div class="inline-flex mb-3">
+                <img src="/icons/icon-192.svg" class="w-20 h-20 rounded-2xl shadow-2xl" alt="Dirhamku Logo">
+            </div>
+            <h1 class="text-3xl font-bold text-white font-heading tracking-wider">DIRHAMKU</h1>
+            <p class="text-tertiary text-xs font-semibold uppercase tracking-widest mt-1">Money Keeper</p>
+        </div>
+
+        <!-- Auth Card -->
+        <div class="w-full max-w-sm relative z-10">
+            <div class="bg-white rounded-2xl p-6 shadow-2xl">
+
+                <!-- ===== LOGIN FORM ===== -->
+                <div id="loginForm">
+                    <h2 class="text-lg font-bold text-primary mb-1 font-heading">Selamat Datang</h2>
+                    <p class="text-xs text-gray-400 mb-5">Masuk untuk mengelola keuangan Anda</p>
+
+                    <!-- Google Sign In -->
+                    <button onclick="signInWithGoogle()" id="googleBtn" class="w-full flex items-center justify-center gap-3 bg-white border-2 border-gray-200 py-3 rounded-xl font-bold text-sm text-gray-600 hover:bg-gray-50 hover:border-gray-300 transition active:scale-[0.98]">
+                        <svg viewBox="0 0 24 24" width="20" height="20"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+                        Masuk dengan Google
+                    </button>
+
+                    <div class="relative my-5">
+                        <hr class="border-gray-200">
+                        <span class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-white px-3 text-[10px] text-gray-400 uppercase font-bold">atau</span>
+                    </div>
+
+                    <div class="space-y-3">
+                        <input type="email" id="loginEmail" placeholder="Email" class="auth-input" autocomplete="email">
+                        <input type="password" id="loginPassword" placeholder="Password" class="auth-input" autocomplete="current-password">
+                    </div>
+
+                    <p id="loginError" class="text-xs text-red-500 mt-3 hidden text-center"></p>
+
+                    <button onclick="signInWithEmail()" id="loginBtn" class="w-full bg-secondary text-primary font-bold py-3 rounded-xl mt-4 hover:bg-yellow-400 transition active:scale-[0.98] shadow-lg shadow-yellow-200/50 text-sm">
+                        MASUK
+                    </button>
+
+                    <div class="flex justify-between mt-4 text-xs">
+                        <button onclick="handleForgotPassword()" class="text-gray-400 hover:text-tertiary transition">Lupa password?</button>
+                        <button onclick="showRegisterForm()" class="text-tertiary font-bold hover:text-teal-700 transition">Daftar baru</button>
+                    </div>
+                </div>
+
+                <!-- ===== REGISTER FORM ===== -->
+                <div id="registerForm" class="hidden">
+                    <h2 class="text-lg font-bold text-primary mb-1 font-heading">Buat Akun</h2>
+                    <p class="text-xs text-gray-400 mb-5">Daftar untuk mulai mencatat keuangan</p>
+
+                    <div class="space-y-3">
+                        <input type="text" id="registerName" placeholder="Nama Lengkap" class="auth-input" autocomplete="name">
+                        <input type="email" id="registerEmail" placeholder="Email" class="auth-input" autocomplete="email">
+                        <input type="password" id="registerPassword" placeholder="Password (min. 6 karakter)" class="auth-input" autocomplete="new-password">
+                    </div>
+
+                    <p id="registerError" class="text-xs text-red-500 mt-3 hidden text-center"></p>
+
+                    <button onclick="registerWithEmail()" id="registerBtn" class="w-full bg-tertiary text-white font-bold py-3 rounded-xl mt-4 hover:bg-teal-600 transition active:scale-[0.98] shadow-lg shadow-teal-200/50 text-sm">
+                        DAFTAR
+                    </button>
+
+                    <p class="text-center text-xs mt-4 text-gray-400">
+                        Sudah punya akun? <button onclick="showLoginForm()" class="text-secondary font-bold hover:text-yellow-600 transition">Masuk</button>
+                    </p>
+                </div>
+            </div>
+
+            <p class="text-center text-[10px] text-white/30 mt-4">Dirhamku v<span class="auth-version">5.0</span> &middot; by @asashades</p>
+        </div>
+    </div>
+
+
+    <!-- ==================== ONBOARDING SCREEN ==================== -->
+    <div id="onboardingScreen" class="w-full h-full md:h-[90vh] md:w-[480px] md:rounded-[30px] bg-primary shadow-2xl relative flex flex-col overflow-hidden border border-white/10 hidden">
+        
+        <!-- Background decorations -->
+        <div class="absolute inset-0 overflow-hidden pointer-events-none">
+            <div class="absolute top-20 -right-20 w-60 h-60 bg-secondary/5 rounded-full"></div>
+            <div class="absolute -bottom-10 -left-10 w-40 h-40 bg-tertiary/5 rounded-full"></div>
+            <div class="absolute top-8 right-8 opacity-10 pointer-events-none"><i class="ph-fill ph-circles-three text-6xl text-white"></i></div>
+        </div>
+
+        <!-- Header with progress -->
+        <div class="relative z-10 p-6 pt-12 shrink-0">
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-white/50 text-xs font-bold uppercase tracking-widest">Setup Profil</span>
+                <span id="ob-step-label" class="text-white/50 text-xs font-bold">1 dari 4</span>
+            </div>
+            <div class="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+                <div id="ob-progress" class="h-full bg-secondary rounded-full transition-all duration-500" style="width: 25%"></div>
+            </div>
+        </div>
+
+        <!-- Content area -->
+        <div class="flex-1 relative z-10 px-6 flex flex-col justify-center overflow-y-auto no-scrollbar">
+
+            <!-- Step 1: Monthly Income -->
+            <div id="ob-step-1">
+                <div class="text-5xl mb-4">💰</div>
+                <h2 class="text-2xl font-bold text-white font-heading mb-2">Berapa gaji<br>bulananmu?</h2>
+                <p class="text-white/50 text-sm mb-6">Ini membantu kami menghitung budget & target tabunganmu secara otomatis.</p>
+                <div class="relative">
+                    <span class="absolute left-4 top-1/2 -translate-y-1/2 text-white/40 font-bold text-sm pointer-events-none">Rp</span>
+                    <input type="number" id="ob-income" placeholder="5000000" class="w-full bg-white/10 border-2 border-white/20 focus:border-secondary rounded-xl px-4 py-4 pl-12 text-white text-lg font-bold outline-none transition placeholder:text-white/20">
+                </div>
+            </div>
+
+            <!-- Step 2: Monthly Budget -->
+            <div id="ob-step-2" class="hidden">
+                <div class="text-5xl mb-4">🎯</div>
+                <h2 class="text-2xl font-bold text-white font-heading mb-2">Berapa budget<br>pengeluaranmu?</h2>
+                <p class="text-white/50 text-sm mb-6">Kami sarankan <span class="text-secondary font-bold">80% dari gajimu</span> untuk pengeluaran bulanan.</p>
+                <div class="relative">
+                    <span class="absolute left-4 top-1/2 -translate-y-1/2 text-white/40 font-bold text-sm pointer-events-none">Rp</span>
+                    <input type="number" id="ob-budget" placeholder="4000000" class="w-full bg-white/10 border-2 border-white/20 focus:border-secondary rounded-xl px-4 py-4 pl-12 text-white text-lg font-bold outline-none transition placeholder:text-white/20">
+                </div>
+                <p id="ob-budget-hint" class="text-secondary/70 text-xs mt-2"></p>
+            </div>
+
+            <!-- Step 3: Savings Target -->
+            <div id="ob-step-3" class="hidden">
+                <div class="text-5xl mb-4">🏦</div>
+                <h2 class="text-2xl font-bold text-white font-heading mb-2">Target tabungan<br>per bulan?</h2>
+                <p class="text-white/50 text-sm mb-5">Aturan emas keuangan: <span class="text-secondary font-bold">minimal 20%</span> dari penghasilan.</p>
+                <!-- Toggle -->
+                <div class="flex gap-2 mb-4">
+                    <button id="ob-sav-btn-pct" onclick="obToggleSavings('pct')" class="flex-1 py-2 rounded-xl text-sm font-bold transition bg-secondary text-primary">% Persen</button>
+                    <button id="ob-sav-btn-rp" onclick="obToggleSavings('rp')" class="flex-1 py-2 rounded-xl text-sm font-bold transition bg-white/10 text-white/50">Rp Nominal</button>
+                </div>
+                <div id="ob-savings-pct-wrap" class="relative">
+                    <input type="number" id="ob-savings-pct" placeholder="20" min="0" max="100" class="w-full bg-white/10 border-2 border-white/20 focus:border-secondary rounded-xl px-4 py-4 pr-12 text-white text-lg font-bold outline-none transition placeholder:text-white/20">
+                    <span class="absolute right-4 top-1/2 -translate-y-1/2 text-white/40 font-bold text-xl pointer-events-none">%</span>
+                </div>
+                <div id="ob-savings-rp-wrap" class="relative hidden">
+                    <span class="absolute left-4 top-1/2 -translate-y-1/2 text-white/40 font-bold text-sm pointer-events-none">Rp</span>
+                    <input type="number" id="ob-savings-rp" placeholder="1000000" class="w-full bg-white/10 border-2 border-white/20 focus:border-secondary rounded-xl px-4 py-4 pl-12 text-white text-lg font-bold outline-none transition placeholder:text-white/20">
+                </div>
+                <p id="ob-savings-hint" class="text-secondary/70 text-xs mt-2"></p>
+            </div>
+
+            <!-- Step 4: Payday Date -->
+            <div id="ob-step-4" class="hidden">
+                <div class="text-5xl mb-4">📅</div>
+                <h2 class="text-2xl font-bold text-white font-heading mb-2">Kapan tanggal<br>gajianmu?</h2>
+                <p class="text-white/50 text-sm mb-6">Kami akan hitung daily allowance & sisa hari sampai gajian.</p>
+                <div class="relative">
+                    <input type="number" id="ob-payday" placeholder="25" min="1" max="31" class="w-full bg-white/10 border-2 border-white/20 focus:border-secondary rounded-xl px-4 py-4 text-white text-2xl font-bold outline-none transition text-center placeholder:text-white/20">
+                    <span class="absolute right-4 top-1/2 -translate-y-1/2 text-white/30 text-xs pointer-events-none">/ bulan</span>
+                </div>
+                <!-- Quick picks -->
+                <div class="flex flex-wrap gap-2 mt-4">
+                    <button onclick="document.getElementById('ob-payday').value=1" class="px-4 py-2 bg-white/10 text-white/60 text-sm rounded-lg font-bold hover:bg-secondary hover:text-primary transition">1</button>
+                    <button onclick="document.getElementById('ob-payday').value=5" class="px-4 py-2 bg-white/10 text-white/60 text-sm rounded-lg font-bold hover:bg-secondary hover:text-primary transition">5</button>
+                    <button onclick="document.getElementById('ob-payday').value=10" class="px-4 py-2 bg-white/10 text-white/60 text-sm rounded-lg font-bold hover:bg-secondary hover:text-primary transition">10</button>
+                    <button onclick="document.getElementById('ob-payday').value=15" class="px-4 py-2 bg-white/10 text-white/60 text-sm rounded-lg font-bold hover:bg-secondary hover:text-primary transition">15</button>
+                    <button onclick="document.getElementById('ob-payday').value=20" class="px-4 py-2 bg-white/10 text-white/60 text-sm rounded-lg font-bold hover:bg-secondary hover:text-primary transition">20</button>
+                    <button onclick="document.getElementById('ob-payday').value=25" class="px-4 py-2 bg-white/10 text-white/60 text-sm rounded-lg font-bold hover:bg-secondary hover:text-primary transition">25</button>
+                    <button onclick="document.getElementById('ob-payday').value=28" class="px-4 py-2 bg-white/10 text-white/60 text-sm rounded-lg font-bold hover:bg-secondary hover:text-primary transition">28</button>
+                </div>
+            </div>
+
+            <!-- Error -->
+            <p id="ob-error" class="text-red-400 text-xs mt-3 hidden font-semibold"></p>
+        </div>
+
+        <!-- Footer buttons -->
+        <div class="relative z-10 p-6 pb-10 shrink-0">
+            <div class="flex gap-3">
+                <button id="ob-back-btn" onclick="onboardingBack()" class="invisible px-5 py-3 border-2 border-white/20 text-white/50 rounded-xl font-bold text-sm transition hover:border-white/40 hover:text-white/70">
+                    ← Kembali
+                </button>
+                <button id="ob-next-btn" onclick="onboardingNext()" class="flex-1 bg-secondary text-primary font-bold py-3 rounded-xl text-sm transition hover:bg-yellow-400 active:scale-[0.98] shadow-lg shadow-yellow-900/30 font-heading">
+                    Lanjut →
+                </button>
+            </div>
+            <button onclick="onboardingSkip()" class="w-full text-center text-white/25 text-xs mt-4 hover:text-white/50 transition py-2">
+                Lewati, atur nanti di Settings →
+            </button>
+        </div>
+    </div>
+
+    
+    <!-- ==================== APP SCREEN ==================== -->
+    <div id="appScreen" class="w-full h-full md:h-[90vh] md:w-[480px] md:rounded-[30px] bg-gray-50 shadow-2xl relative flex flex-col overflow-hidden hidden">
+
+        <!-- MAIN CONTENT AREA -->
+        <main class="flex-1 overflow-y-auto w-full relative z-10 no-scrollbar" id="mainContainer">
+            
+            <!-- ====== TAB: HOME ====== -->
+            <div id="tab-home" class="flex flex-col pb-24 min-h-full">
+                <!-- Header Home -->
+                <div class="bg-primary text-white p-6 pb-20 md:rounded-t-[30px] relative shrink-0">
+                    <div class="absolute top-0 right-0 p-4 opacity-10 blur-sm pointer-events-none">
+                        <i class="ph-fill ph-circles-three text-6xl"></i>
+                    </div>
+                    <div class="flex justify-between items-center mb-6 relative z-10">
+                        <div class="flex items-center gap-3">
+                            <div>
+                                <p class="text-[10px] text-tertiary uppercase tracking-wider font-semibold opacity-80" id="userGreeting">Halo, User</p>
+                                <h1 class="font-bold text-sm tracking-wide leading-tight">Dirhamku</h1>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-1 bg-white/10 rounded-full border border-white/10 backdrop-blur-md p-1">
+                            <button onclick="app.navigateMonth(-1)" class="w-7 h-7 rounded-full hover:bg-white/20 flex items-center justify-center transition active:scale-90"><i class="ph-bold ph-caret-left text-xs"></i></button>
+                            <span id="homeMonthLabel" class="text-xs font-bold px-2 whitespace-nowrap">Apr 2026</span>
+                            <button onclick="app.navigateMonth(1)" id="homeNextMonthBtn" class="w-7 h-7 rounded-full hover:bg-white/20 flex items-center justify-center transition active:scale-90"><i class="ph-bold ph-caret-right text-xs"></i></button>
+                        </div>
+                    </div>
+
+                    <div class="flex justify-between items-end relative z-10">
+                        <div>
+                            <p class="text-xs text-gray-300 font-medium mb-1">Total Balance</p>
+                            <h2 id="homeTotalBalance" class="text-3xl font-bold text-white tracking-tight font-heading"><span class="loader"></span></h2>
+                        </div>
+                        <div id="moodRingBadge" class="flex items-center gap-1.5 bg-white/10 backdrop-blur-sm border border-white/15 rounded-full px-3 py-1.5">
+                            <i id="moodRingIcon" class="ph-fill ph-smiley text-gray-400 text-sm shrink-0 transition-colors"></i>
+                            <span id="moodRingLabel" class="text-[10px] font-bold text-white/80">—</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Cards Container -->
+                <div id="homeCardsContainer" class="px-4 -mt-12 relative z-20 space-y-3">
+                    <!-- Hero Income/Expense -->
+                    <div class="bg-white p-4 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 flex gap-4">
+                        <div class="flex-1 flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-2xl bg-success/10 text-success flex items-center justify-center"><i class="ph-bold ph-arrow-down-left text-lg"></i></div>
+                            <div><p class="text-[10px] uppercase font-bold text-gray-400">Income</p><p id="homeIncome" class="font-bold text-primary text-sm">Rp 0</p></div>
+                        </div>
+                        <div class="w-px bg-gray-100"></div>
+                        <div class="flex-1 flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-2xl bg-danger/10 text-danger flex items-center justify-center"><i class="ph-bold ph-arrow-up-right text-lg"></i></div>
+                            <div><p class="text-[10px] uppercase font-bold text-gray-400">Expense</p><p id="homeExpense" class="font-bold text-primary text-sm">Rp 0</p></div>
+                        </div>
+                    </div>
+
+                    <!-- Payday Countdown Card -->
+                    <div id="cardPayday" class="bg-gradient-to-br from-indigo-50 to-white rounded-3xl p-5 border border-indigo-50/50 shadow-sm overflow-hidden relative">
+                        <div class="flex justify-between items-start mb-3 relative z-10">
+                            <div>
+                                <h3 class="font-bold text-primary text-lg leading-tight">Payday</h3>
+                                <p class="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Days Until Next Salary</p>
+                            </div>
+                        </div>
+                        <div class="flex items-start gap-4 relative z-10">
+                            <!-- Left Column -->
+                            <div class="flex-1 min-w-0">
+                                <p id="paydayTargetDate" class="text-xs font-bold text-indigo-600 mb-2">01 MAY</p>
+                                <div id="paydayCalendarGrid" class="grid gap-x-[2px] gap-y-[5px] mb-3" style="grid-template-columns:repeat(7,minmax(0,1fr));">
+                                    <!-- Dots generated by JS -->
+                                </div>
+                                <p id="paydayInsight" class="text-[10px] text-gray-500 leading-relaxed font-medium mt-2">
+                                    Hang in there! 5 days left. You can spend Rp 150k/day.
+                                </p>
+                            </div>
+                            <!-- Right Column -->
+                            <div class="w-24 shrink-0 flex flex-col items-center justify-start relative -mt-1">
+                                <div class="w-20 h-20 relative">
+                                    <svg class="w-20 h-20 transform -rotate-90">
+                                        <circle cx="40" cy="40" r="36" stroke="currentColor" stroke-width="6" fill="transparent" class="text-indigo-100" />
+                                        <circle id="paydayGauge" cx="40" cy="40" r="36" stroke="currentColor" stroke-width="6" fill="transparent" stroke-dasharray="226.2" stroke-dashoffset="0" class="text-indigo-500 transition-all duration-1000 ease-out drop-shadow-md" stroke-linecap="round"/>
+                                    </svg>
+                                    <div class="absolute inset-0 flex flex-col items-center justify-center">
+                                        <span id="paydayDaysLeft" class="text-2xl font-bold text-indigo-900 font-heading leading-none">5</span>
+                                        <span class="text-[8px] font-bold text-indigo-400 mt-0.5">DAYS</span>
+                                    </div>
+                                </div>
+                                <p id="paydayTotalDays" class="text-[9px] font-bold text-indigo-300 mt-1 tracking-widest">30 DAYS</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Performance Card -->
+                    <div id="cardPerformance" class="bg-gradient-to-br from-white to-gray-50 rounded-3xl p-5 border border-gray-100 shadow-sm relative overflow-hidden">
+                        <div class="flex justify-between items-center mb-3">
+                            <h3 class="font-bold text-primary text-sm flex items-center gap-2"><i class="ph-fill ph-gauge text-secondary"></i> Performance</h3>
+                        </div>
+                        <div id="homePerformanceContent" class="min-h-[60px] flex items-center justify-center text-xs text-gray-400"><span class="loader-dark"></span></div>
+                    </div>
+
+                    <!-- Status / Budget Card -->
+                    <div id="cardStatus" class="bg-white rounded-3xl p-5 border border-gray-100 shadow-sm">
+                        <div id="homeStatusContent" class="min-h-[340px] flex items-center justify-center text-xs text-gray-400"><span class="loader-dark"></span></div>
+                    </div>
+
+                    <!-- Top Spending Card (merged) -->
+                    <div id="cardTopTransactions" class="bg-white rounded-3xl p-5 border border-gray-100 shadow-sm overflow-hidden">
+                        <div id="homeTopSpendingContent"></div>
+                    </div>
+
+                    <!-- Deep Insight Carousel -->
+                    <div id="cardInsightCarousel" class="bg-gray-50 rounded-3xl border border-gray-100 overflow-hidden">
+                        <div class="px-5 pt-4 pb-2 flex items-center gap-2.5">
+                            <div class="w-9 h-9 rounded-2xl bg-primary/5 flex items-center justify-center shrink-0">
+                                <i class="ph-fill ph-brain text-primary text-base"></i>
+                            </div>
+                            <div>
+                                <p class="text-[9px] font-bold uppercase tracking-widest text-gray-400">Deep Insights</p>
+                                <p class="text-sm font-bold text-primary font-heading leading-none">Financial Health</p>
+                            </div>
+                            <span class="ml-auto text-[9px] text-gray-300 font-bold">← geser →</span>
+                        </div>
+                        <div id="insightCarousel" class="flex gap-3 overflow-x-auto no-scrollbar px-5 pb-5 pt-2 snap-x snap-mandatory" style="scroll-snap-type:x mandatory;">
+                            <!-- Cards injected by renderInsightCarousel() -->
+                            <div class="snap-center shrink-0 w-64 bg-white rounded-3xl p-4 border border-gray-100 shadow-sm flex items-center justify-center min-h-[120px]">
+                                <span class="loader-dark"></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- No Spend Day Button -->
+                    <div id="cardNoSpend" class="bg-white rounded-3xl p-4 border border-gray-100 shadow-sm">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-3">
+                                <div class="w-9 h-9 rounded-2xl bg-success/10 text-success flex items-center justify-center shrink-0">
+                                    <i class="ph-fill ph-leaf text-base"></i>
+                                </div>
+                                <div>
+                                    <p class="text-[9px] font-bold uppercase tracking-widest text-gray-400">Daily Challenge</p>
+                                    <p class="text-sm font-bold text-primary font-heading leading-none">No Spend Day</p>
+                                </div>
+                            </div>
+                        </div>
+                        <p class="text-[11px] text-gray-500 mb-3 leading-relaxed">Hari ini nggak jajan sama sekali? Tap tombol di bawah — serius, ini bisa bikin tabungan lo naik lebih cepet 🌿</p>
+                        <button id="noSpendBtn" onclick="app.logNoSpendDay()" class="w-full bg-success text-white font-bold py-3 rounded-2xl text-sm active:scale-[0.98] transition flex items-center justify-center gap-2 shadow-sm shadow-emerald-200">
+                            <i class="ph-fill ph-leaf"></i> Gue No Spend Hari Ini! 🎉
+                        </button>
+                        <p id="noSpendHint" class="hidden text-[10px] text-amber-600 text-center mt-2 font-medium"></p>
+                        <div id="noSpendDoneLabel" class="hidden w-full bg-success/10 text-success font-bold py-3 rounded-2xl text-sm text-center flex items-center justify-center gap-2">
+                            <i class="ph-fill ph-check-circle"></i> No Spend Day tercatat! Mantap 🔥
+                        </div>
+                    </div>
+
+                    <!-- Gamification Streaks -->
+                    <div id="cardGamificationStreaks" class="bg-white rounded-3xl p-4 border border-gray-100 shadow-sm flex flex-col gap-4">
+                        <!-- Header -->
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-2">
+                                <div class="w-7 h-7 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                                    <i class="ph-fill ph-calendar-check text-sm"></i>
+                                </div>
+                                <div>
+                                    <p class="text-[9px] font-bold uppercase tracking-widest text-gray-400">Bulan Ini</p>
+                                    <p class="text-xs font-bold text-primary leading-tight">Konsistensi Bulanan</p>
+                                </div>
+                            </div>
+                            <span id="consistencyMonthLabel" class="text-[9px] font-bold text-gray-400 uppercase bg-gray-100 px-2 py-1 rounded-full">—</span>
+                        </div>
+
+                        <!-- Tracking Consistency Row -->
+                        <div class="bg-orange-50 px-4 pt-3 pb-3.5 rounded-2xl">
+                            <div class="flex justify-between items-center mb-2.5">
+                                <div class="flex items-center gap-2">
+                                    <i class="ph-fill ph-pencil-simple text-orange-500 text-base"></i>
+                                    <p class="text-xs font-bold text-orange-700">Tracking Transaksi</p>
+                                </div>
+                                <p class="text-sm font-bold text-orange-500 font-heading"><span id="trackingConsistencyCount">0</span><span class="text-[10px] font-semibold text-orange-400"> / <span id="trackingConsistencyTotal">30</span> hari</span></p>
+                            </div>
+                            <!-- Progress bar -->
+                            <div class="w-full bg-orange-100 rounded-full h-2">
+                                <div id="trackingConsistencyBar" class="bg-orange-400 h-2 rounded-full transition-all duration-500" style="width:0%"></div>
+                            </div>
+                        </div>
+
+                        <!-- Under Budget Row -->
+                        <div class="bg-blue-50 px-4 pt-3 pb-3.5 rounded-2xl">
+                            <div class="flex justify-between items-center mb-2.5">
+                                <div class="flex items-center gap-2">
+                                    <i class="ph-fill ph-shield-check text-blue-500 text-base"></i>
+                                    <p class="text-xs font-bold text-blue-700">Di Bawah Budget</p>
+                                </div>
+                                <p class="text-sm font-bold text-blue-500 font-heading"><span id="underBudgetCount">0</span><span class="text-[10px] font-semibold text-blue-400"> / <span id="underBudgetTotal">30</span> hari</span></p>
+                            </div>
+                            <!-- Progress bar -->
+                            <div class="w-full bg-blue-100 rounded-full h-2">
+                                <div id="underBudgetBar" class="bg-blue-400 h-2 rounded-full transition-all duration-500" style="width:0%"></div>
+                            </div>
+                            <p id="dailyBudgetHint" class="text-[9px] text-blue-400 mt-2">Budget harian: —</p>
+                        </div>
+
+                        <!-- Motivational message -->
+                        <p id="consistencyMessage" class="text-[11px] text-gray-500 leading-relaxed text-center px-1 -mt-1">Mulai catat transaksi hari ini! 💪</p>
+                    </div>
+
+                    <!-- Subscription Summary Card -->
+                    <div id="cardSubscriptions" class="bg-white rounded-3xl p-4 border border-gray-100 shadow-sm hidden">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-3">
+                                <div class="w-9 h-9 rounded-2xl bg-violet-500/10 text-violet-500 flex items-center justify-center shrink-0">
+                                    <i class="ph-fill ph-repeat text-base"></i>
+                                </div>
+                                <div>
+                                    <p class="text-[9px] font-bold uppercase tracking-widest text-gray-400">Langganan Aktif</p>
+                                    <p id="subsCount" class="text-sm font-bold text-primary font-heading leading-none">0 langganan</p>
+                                </div>
+                            </div>
+                            <p id="subsTotalBadge" class="text-sm font-bold text-violet-500">Rp 0</p>
+                        </div>
+                        <div id="subsListPreview" class="space-y-2 mb-3"></div>
+                        <p id="subsInsight" class="text-[11px] text-gray-500 leading-relaxed mb-3"></p>
+                        <button onclick="app.switchTab('transactions'); setTimeout(()=>app.openRecurringModal(), 200)" class="w-full bg-violet-500/10 text-violet-600 font-bold py-2.5 rounded-2xl text-xs active:scale-[0.98] transition flex items-center justify-center gap-1.5">
+                            <i class="ph-bold ph-gear-six"></i> Kelola Langganan
+                        </button>
+                    </div>
+
+                    <!-- Recent Transactions -->
+                    <div id="cardRecentTransactions" class="bg-white rounded-3xl p-5 border border-gray-100">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="font-bold text-primary text-sm flex items-center gap-2"><i class="ph-fill ph-clock-counter-clockwise text-gray-400"></i> Recent 5</h3>
+                            <button onclick="app.switchTab('transactions')" class="text-[10px] font-bold text-tertiary uppercase">Lihat Semua</button>
+                        </div>
+                        <div id="homeRecentList" class="space-y-3"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ====== TAB: TRANSACTIONS ====== -->
+            <div id="tab-transactions" class="hidden flex-col h-full min-h-0 bg-gray-50 relative">
+                <!-- Search Overlay -->
+                <div id="txSearchOverlay" class="absolute inset-0 z-30 bg-gray-50 hidden flex-col">
+                    <div class="bg-white px-4 pt-5 pb-3 border-b border-gray-100 flex items-center gap-3">
+                        <button onclick="app.closeSearch()" class="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full text-gray-600 shrink-0"><i class="ph-bold ph-arrow-left text-sm"></i></button>
+                        <input type="text" id="txSearchInput" placeholder="Cari transaksi..." class="flex-1 bg-gray-100 rounded-xl px-4 py-2.5 text-sm font-medium text-primary outline-none focus:bg-white focus:ring-2 focus:ring-secondary/50 transition" autocomplete="off">
+                    </div>
+                    <div id="txSearchResults" class="flex-1 overflow-y-auto no-scrollbar px-4 pt-3 pb-24 space-y-3"></div>
+                </div>
+                <div class="bg-white px-4 pt-5 pb-2 border-b border-gray-100 z-20 sticky top-0">
+                    <div class="flex justify-between items-center mb-3">
+                        <h1 class="text-lg font-bold text-primary font-heading">Transactions</h1>
+                        <div class="flex gap-2 items-center">
+                            <button onclick="app.openRecurringModal()" class="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full text-gray-600 hover:bg-gray-200" title="Transaksi Rutin"><i class="ph-bold ph-repeat text-sm"></i></button>
+                            <button onclick="app.openSearch()" class="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full text-gray-600 hover:bg-gray-200" title="Cari"><i class="ph-bold ph-magnifying-glass text-sm"></i></button>
+                            <div class="flex items-center gap-1 bg-gray-100 rounded-full px-2 py-1">
+                                <button onclick="app.navigateMonth(-1)" class="w-6 h-6 rounded-full hover:bg-gray-200 flex items-center justify-center transition active:scale-90"><i class="ph-bold ph-caret-left text-xs text-gray-600"></i></button>
+                                <span id="txMonthLabel" class="text-[11px] font-bold text-primary px-1 whitespace-nowrap">Apr 2026</span>
+                                <button onclick="app.navigateMonth(1)" id="txNextMonthBtn" class="w-6 h-6 rounded-full hover:bg-gray-200 flex items-center justify-center transition active:scale-90"><i class="ph-bold ph-caret-right text-xs text-gray-600"></i></button>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Horizontal Time Pills -->
+                    <div id="txTimeFilter" class="flex gap-1.5 overflow-x-auto no-scrollbar pb-1"></div>
+                </div>
+
+                <div class="px-4 pt-3 pb-[calc(96px+env(safe-area-inset-bottom))] space-y-4 overflow-y-auto no-scrollbar flex-1 min-h-0 relative z-10">
+                    <div class="space-y-2.5">
+                        <div class="flex items-center justify-between gap-3 px-1">
+                            <div>
+                                <p class="text-[9px] uppercase tracking-[0.18em] text-gray-400 font-bold">Account Summary</p>
+                            </div>
+                            <div class="flex items-center gap-2 shrink-0">
+                                <button onclick="app.toggleBalanceVis()" class="w-8 h-8 rounded-full bg-white border border-gray-100 text-gray-500 flex items-center justify-center active:scale-95 transition">
+                                    <i class="ph-fill ph-eye"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div id="txSingleSummaryCard"></div>
+                    </div>
+
+                    <!-- List Container (Grouped by Date) -->
+                    <div id="txListContainer" class="space-y-3 pb-10"></div>
+                </div>
+            </div>
+
+            <!-- ====== TAB: INPUT ====== -->
+            <div id="tab-input" class="hidden flex-1 flex-col h-full min-h-0 bg-white relative overflow-hidden">
+                <div class="p-5 border-b border-gray-100 flex justify-between items-center shrink-0">
+                    <h2 class="font-bold text-lg text-primary font-heading">Input Transaksi</h2>
+                    <div class="bg-gray-100 p-1 rounded-xl flex gap-1">
+                        <button onclick="app.setInputMode('chat')" id="btnModeChat" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-white shadow-sm text-primary">Chat</button>
+                        <button onclick="app.setInputMode('form')" id="btnModeForm" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all text-gray-400">Form</button>
+                    </div>
+                </div>
+
+                <!-- CHAT MODE -->
+                <div id="inputChatMode" class="flex-1 flex flex-col overflow-hidden bg-[#E2E8F0] relative min-h-0">
+                    <!-- Chat History -->
+                    <div id="chatHistory" class="flex-1 overflow-y-auto no-scrollbar momentum-scroll p-4 pb-6 space-y-4 min-h-0">
+                        <!-- Bubbles injected here -->
+                        <div class="text-center text-[10px] text-gray-400 font-bold uppercase my-2 py-1 px-3 bg-gray-200/50 rounded-full inline-block mx-auto">Mode Cepat</div>
+                        <div class="flex justify-start items-start gap-2">
+                            <div class="w-7 h-7 rounded-full bg-gradient-to-br from-secondary to-tertiary flex items-center justify-center shrink-0 mt-0.5 shadow-sm">
+                                <i class="ph-fill ph-robot text-primary text-sm"></i>
+                            </div>
+                            <div class="bg-white p-3 rounded-2xl rounded-tl-sm shadow-sm max-w-[85%] text-sm text-gray-700">
+                                Halo! Catat transaksi langsung di sini. Ketik <b>help</b> untuk panduan lengkap. 💡
+                            </div>
+                        </div>
+                    </div>
+                    <div id="chatPendingPanel" class="hidden shrink-0 px-3 pb-2 bg-[#E2E8F0]">
+                        <div class="bg-white rounded-[26px] border border-gray-100 shadow-[0_8px_24px_rgba(15,23,42,0.06)] p-3">
+                            <div class="flex items-center justify-between gap-3 mb-2">
+                                <div>
+                                    <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400">Review Parser</p>
+                                    <p id="chatPendingTitle" class="text-sm font-bold text-primary">Cek transaksi dulu</p>
+                                </div>
+                                <button onclick="app.cancelChatTx()" class="w-8 h-8 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center active:scale-95 transition">
+                                    <i class="ph-bold ph-x"></i>
+                                </button>
+                            </div>
+                            <div id="chatPendingContent" class="space-y-2 max-h-[220px] overflow-y-auto no-scrollbar momentum-scroll pr-0.5"></div>
+                            <div class="flex gap-2 w-full mt-3">
+                                <button id="chatPendingSaveBtn" onclick="app.confirmChatTx()" class="flex-1 py-2.5 rounded-2xl bg-[#FFB800] text-[#040720] font-bold text-xs shadow-sm active:scale-[0.98] transition">✓ Simpan</button>
+                                <button onclick="app.cancelChatTx()" class="py-2.5 px-4 rounded-2xl bg-gray-100 text-gray-500 font-bold text-xs active:scale-[0.98] transition">Batal</button>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Chat Input Area -->
+                    <div id="chatComposer" class="shrink-0 bg-white p-3 pb-[calc(12px+env(safe-area-inset-bottom))] border-t border-gray-100 shadow-[0_-10px_20px_-10px_rgba(0,0,0,0.05)] flex items-end gap-2">
+                        <div class="flex-1 bg-gray-100 rounded-2xl p-1 flex flex-col">
+                            <input type="text" id="chatInput" placeholder="Transaksi hari ini..." class="w-full bg-transparent border-none text-sm px-3 py-2 outline-none font-medium text-primary placeholder-gray-400" autocomplete="off">
+                        </div>
+                        <!-- AI Toggle -->
+                        <button id="chatAiToggle" onclick="app.toggleChatAiMode()" title="Mode AI" class="w-10 h-10 rounded-full shrink-0 flex items-center justify-center transition active:scale-95 bg-indigo-100 text-indigo-500">
+                            <i class="ph-fill ph-sparkle text-lg"></i>
+                        </button>
+                        <button onclick="app.submitChat()" class="w-10 h-10 bg-secondary text-primary rounded-full shrink-0 flex items-center justify-center shadow-lg active:scale-95 transition"><i class="ph-bold ph-paper-plane-right"></i></button>
+                    </div>
+                </div>
+
+                <!-- FORM MODE - Calculator Style -->
+                <div id="inputFormMode" class="hidden flex-1 flex-col h-full min-h-0 bg-white relative">
+                    <!-- Top bar: close + type switcher -->
+                    <div class="flex items-center justify-between px-4 pt-4 pb-3 shrink-0">
+                        <button onclick="app.closeFormMode()" class="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 active:scale-95 transition" tabindex="-1">
+                            <i class="ph-bold ph-x text-sm"></i>
+                        </button>
+                        <!-- Segmented type control: icon-only, large -->
+                        <div class="flex bg-gray-100 rounded-2xl p-1 gap-1">
+                            <button id="formTypeBtnExpense" type="button" onclick="app.setFormType('Expense')"
+                                class="w-12 h-12 rounded-xl flex items-center justify-center transition">
+                                <i class="ph-bold ph-minus-circle text-2xl"></i>
+                            </button>
+                            <button id="formTypeBtnIncome" type="button" onclick="app.setFormType('Income')"
+                                class="w-12 h-12 rounded-xl flex items-center justify-center transition">
+                                <i class="ph-bold ph-plus-circle text-2xl"></i>
+                            </button>
+                            <button id="formTypeBtnTransfer" type="button" onclick="app.setFormType('Transfer')"
+                                class="w-12 h-12 rounded-xl flex items-center justify-center transition">
+                                <i class="ph-bold ph-arrows-left-right text-2xl"></i>
+                            </button>
+                        </div>
+                        <div id="formSpacer" class="w-9"></div>
+                        <button id="formDeleteBtn" onclick="app.deleteFormTx()" class="w-9 h-9 rounded-full bg-danger/10 flex items-center justify-center text-danger active:scale-95 transition hidden" tabindex="-1">
+                            <i class="ph-bold ph-trash text-sm"></i>
+                        </button>
+                    </div>
+
+                    <!-- Date/Time pills -->
+                    <div class="flex gap-2 justify-center px-4 pb-3 shrink-0">
+                        <button type="button" onclick="document.getElementById('formDate').showPicker?document.getElementById('formDate').showPicker():document.getElementById('formDate').click()"
+                            class="flex items-center gap-1.5 bg-gray-100 rounded-full px-3 py-1.5 text-xs font-bold text-primary active:scale-95 transition">
+                            <i class="ph-bold ph-calendar text-secondary text-sm"></i>
+                            <span id="formDateLabel">Hari ini</span>
+                        </button>
+                        <button type="button" onclick="document.getElementById('formTime').showPicker?document.getElementById('formTime').showPicker():document.getElementById('formTime').click()"
+                            class="flex items-center gap-1.5 bg-gray-100 rounded-full px-3 py-1.5 text-xs font-bold text-primary active:scale-95 transition">
+                            <i class="ph-bold ph-clock text-tertiary text-sm"></i>
+                            <span id="formTimeLabel">Sekarang</span>
+                        </button>
+                        <input type="date" id="formDate" class="sr-only" onchange="app.updateFormDateLabel()">
+                        <input type="time" id="formTime" class="sr-only" onchange="app.updateFormTimeLabel()">
+                    </div>
+
+                    <!-- Amount display area -->
+                    <div class="flex-1 flex flex-col justify-center items-center px-6 min-h-0">
+                        <p class="text-[10px] font-bold text-gray-300 uppercase tracking-widest mb-1">IDR</p>
+                        <div class="text-4xl font-heading font-bold text-primary tracking-tight text-center w-full min-h-[52px] flex items-center justify-center">
+                            <span id="formAmountDisplay">0</span>
+                        </div>
+                        <input type="hidden" id="formAmount">
+                        <input type="text" id="formNote" placeholder="Tambahkan deskripsi..." maxlength="60"
+                            class="mt-2 text-sm text-center text-gray-400 bg-transparent border-0 outline-none w-full font-medium placeholder-gray-300">
+
+                        <!-- Standard fields: account + category -->
+                        <div id="formStandardFields" class="w-full mt-4 space-y-0">
+                            <div class="flex items-center justify-between py-3 border-t border-gray-100">
+                                <button type="button" onclick="app.openAccountPopup('formAccount')" class="text-left flex items-center gap-2">
+                                    <div id="formAccountIcon" class="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 bg-gray-100 text-gray-500">
+                                        <i class="ph-bold ph-wallet text-sm"></i>
+                                    </div>
+                                    <div>
+                                        <p class="text-[9px] font-bold text-gray-400 uppercase">Akun</p>
+                                        <p id="formAccountLabel" class="text-sm font-bold text-primary mt-0.5">Pilih...</p>
+                                    </div>
+                                </button>
+                                <input type="hidden" id="formAccount">
+
+                                <button type="button" onclick="app.openCategoryPopup()" class="text-right flex flex-row-reverse items-center gap-2">
+                                    <div id="formCategoryIcon" class="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 bg-gray-100 text-gray-500">
+                                        <i class="ph-bold ph-tag text-sm"></i>
+                                    </div>
+                                    <div>
+                                        <p class="text-[9px] font-bold text-gray-400 uppercase text-right">Kategori</p>
+                                        <p id="formCategoryLabel" class="text-sm font-bold text-secondary mt-0.5">Pilih...</p>
+                                    </div>
+                                </button>
+                                <input type="hidden" id="formCategory">
+                            </div>
+                        </div>
+
+                        <!-- Exclude from budget toggle -->
+                        <div id="formBudgetToggleRow" class="flex items-center justify-between py-3 border-t border-gray-100">
+                            <div class="flex items-center gap-2">
+                                <i class="ph-fill ph-tag-simple text-amber-400 text-base"></i>
+                                <p class="text-sm font-bold text-primary">Hitung di budget?</p>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="formExcludeBudget" class="sr-only peer" checked>
+                                <div class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-secondary"></div>
+                            </label>
+                        </div>
+
+                        <!-- Recurring Fields (hidden by default) -->
+                        <div id="formRecurringFields" class="hidden w-full mt-1 space-y-0">
+                            <div class="flex items-center gap-3 py-3 border-t border-gray-100">
+                                <div class="flex-1 min-w-0">
+                                    <p class="text-[9px] font-bold text-gray-400 uppercase mb-1">Siklus</p>
+                                    <select id="formRecFrequency" class="w-full bg-gray-50 rounded-xl px-3 py-2.5 text-sm font-bold text-primary outline-none appearance-none">
+                                        <option value="monthly">Tiap Bulan</option>
+                                        <option value="weekly">Tiap Minggu</option>
+                                        <option value="yearly">Tiap Tahun</option>
+                                        <option value="daily">Tiap Hari</option>
+                                    </select>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <p class="text-[9px] font-bold text-gray-400 uppercase mb-1">Start Date</p>
+                                    <input type="date" id="formRecStartDate" class="w-full bg-gray-50 rounded-xl px-3 py-2.5 text-sm font-bold text-primary outline-none">
+                                </div>
+                            </div>
+                            <div class="py-3 border-t border-gray-100">
+                                <p class="text-[9px] font-bold text-gray-400 uppercase mb-1 flex justify-between">
+                                    <span>End Date (Opsional)</span>
+                                    <span class="text-[9px] text-gray-300 font-normal normal-case">Kosongkan jika seterusnya</span>
+                                </p>
+                                <input type="date" id="formRecEndDate" class="w-full bg-gray-50 rounded-xl px-3 py-2.5 text-sm font-bold text-primary outline-none">
+                            </div>
+                        </div>
+
+                        <!-- Transfer fields: from & to side by side -->
+                        <div id="formTransferFields" class="hidden w-full mt-4">
+                            <div class="flex items-center gap-3 py-3 border-t border-gray-100">
+                                <button type="button" onclick="app.openAccountPopup('formFromAccount')" class="flex-1 min-w-0 text-left flex items-center gap-2">
+                                    <div id="formFromAccountIcon" class="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 bg-gray-100 text-gray-500">
+                                        <i class="ph-bold ph-wallet text-sm"></i>
+                                    </div>
+                                    <div class="min-w-0">
+                                        <p class="text-[9px] font-bold text-gray-400 uppercase mb-0.5">Dari</p>
+                                        <p id="formFromAccountLabel" class="text-sm font-bold text-primary truncate">Pilih...</p>
+                                    </div>
+                                </button>
+                                <input type="hidden" id="formFromAccount">
+
+                                <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
+                                    <i class="ph-bold ph-arrows-right text-blue-500 text-sm"></i>
+                                </div>
+
+                                <button type="button" onclick="app.openAccountPopup('formToAccount')" class="flex-1 min-w-0 text-right flex flex-row-reverse items-center gap-2">
+                                    <div id="formToAccountIcon" class="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 bg-gray-100 text-gray-500">
+                                        <i class="ph-bold ph-wallet text-sm"></i>
+                                    </div>
+                                    <div class="min-w-0">
+                                        <p class="text-[9px] font-bold text-gray-400 uppercase mb-0.5 text-right">Ke</p>
+                                        <p id="formToAccountLabel" class="text-sm font-bold text-primary truncate">Pilih...</p>
+                                    </div>
+                                </button>
+                                <input type="hidden" id="formToAccount">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Bottom: Operator row + Numpad, positioned near bottom above nav bar -->
+                    <div class="shrink-0 bg-gray-50 rounded-t-[28px] pt-3 pb-[80px]">
+                        <!-- Operator row -->
+                        <div class="flex items-center px-3 pb-2 gap-1">
+                            <button type="button" onclick="app.calcOp('+')" class="flex-1 h-10 rounded-xl text-sm font-bold text-gray-600 bg-white border border-gray-200 active:scale-95 transition">+</button>
+                            <button type="button" onclick="app.calcOp('-')" class="flex-1 h-10 rounded-xl text-sm font-bold text-gray-600 bg-white border border-gray-200 active:scale-95 transition">−</button>
+                            <button type="button" onclick="app.calcOp('*')" class="flex-1 h-10 rounded-xl text-sm font-bold text-gray-600 bg-white border border-gray-200 active:scale-95 transition">×</button>
+                            <button type="button" onclick="app.calcOp('/')" class="flex-1 h-10 rounded-xl text-sm font-bold text-gray-600 bg-white border border-gray-200 active:scale-95 transition">÷</button>
+                            <button type="button" onclick="app.calcEquals()" class="flex-1 h-10 rounded-xl text-sm font-bold text-gray-600 bg-white border border-gray-200 active:scale-95 transition">=</button>
+                            <button type="button" onclick="app.submitForm()" class="flex-[2] h-10 rounded-xl text-sm font-bold text-primary bg-secondary border border-secondary shadow-sm active:scale-95 transition flex items-center justify-center gap-1">
+                                <i class="ph-bold ph-check"></i>
+                            </button>
+                        </div>
+                        <!-- Numpad -->
+                        <div class="grid grid-cols-3 gap-0 px-3">
+                            <button type="button" onclick="app.calcInput('7')" class="h-14 text-xl font-bold text-primary active:bg-gray-200 rounded-xl transition">7</button>
+                            <button type="button" onclick="app.calcInput('8')" class="h-14 text-xl font-bold text-primary active:bg-gray-200 rounded-xl transition">8</button>
+                            <button type="button" onclick="app.calcInput('9')" class="h-14 text-xl font-bold text-primary active:bg-gray-200 rounded-xl transition">9</button>
+                            <button type="button" onclick="app.calcInput('4')" class="h-14 text-xl font-bold text-primary active:bg-gray-200 rounded-xl transition">4</button>
+                            <button type="button" onclick="app.calcInput('5')" class="h-14 text-xl font-bold text-primary active:bg-gray-200 rounded-xl transition">5</button>
+                            <button type="button" onclick="app.calcInput('6')" class="h-14 text-xl font-bold text-primary active:bg-gray-200 rounded-xl transition">6</button>
+                            <button type="button" onclick="app.calcInput('1')" class="h-14 text-xl font-bold text-primary active:bg-gray-200 rounded-xl transition">1</button>
+                            <button type="button" onclick="app.calcInput('2')" class="h-14 text-xl font-bold text-primary active:bg-gray-200 rounded-xl transition">2</button>
+                            <button type="button" onclick="app.calcInput('3')" class="h-14 text-xl font-bold text-primary active:bg-gray-200 rounded-xl transition">3</button>
+                            <button type="button" onclick="app.calcInput('000')" class="h-14 text-base font-bold text-gray-500 active:bg-gray-200 rounded-xl transition">000</button>
+                            <button type="button" onclick="app.calcInput('0')" class="h-14 text-xl font-bold text-primary active:bg-gray-200 rounded-xl transition">0</button>
+                            <button type="button" onclick="app.calcBackspace()" class="h-14 text-xl font-bold text-gray-500 active:bg-gray-200 rounded-xl transition flex items-center justify-center">
+                                <i class="ph-bold ph-backspace text-xl"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- ====== TAB: REPORT ====== -->
+            <div id="tab-report" class="hidden flex-col pb-24 min-h-full bg-gray-50">
+                <div class="bg-primary text-white p-6 pb-16 md:rounded-t-[30px] relative shrink-0">
+                    <div class="absolute top-0 right-0 p-4 opacity-10 blur-sm pointer-events-none"><i class="ph-fill ph-chart-pie text-6xl"></i></div>
+                    <div class="flex justify-between items-center relative z-10">
+                        <div>
+                            <p class="text-[10px] text-tertiary uppercase tracking-wider font-semibold opacity-80">Laporan</p>
+                            <h1 class="font-bold text-lg tracking-wide leading-tight font-heading">Financial Report</h1>
+                        </div>
+                        <div class="flex items-center gap-1 bg-white/10 rounded-full border border-white/10 backdrop-blur-md p-1">
+                            <button onclick="app.navigateMonth(-1)" class="w-7 h-7 rounded-full hover:bg-white/20 flex items-center justify-center transition active:scale-90"><i class="ph-bold ph-caret-left text-xs"></i></button>
+                            <span id="reportMonthLabel" class="text-xs font-bold px-2 whitespace-nowrap">Apr 2026</span>
+                            <button onclick="app.navigateMonth(1)" id="reportNextMonthBtn" class="w-7 h-7 rounded-full hover:bg-white/20 flex items-center justify-center transition active:scale-90"><i class="ph-bold ph-caret-right text-xs"></i></button>
+                        </div>
+                    </div>
+                </div>
+                <div class="px-4 -mt-10 relative z-20 space-y-3" id="reportContent">
+                    <div class="flex items-center justify-center py-10"><span class="loader-dark"></span></div>
+                </div>
+            </div>
+
+            <!-- ====== TAB: SETTINGS ====== -->
+            <div id="tab-settings" class="hidden flex-col pb-32 min-h-full bg-gray-50">
+                <!-- Header -->
+                <div class="bg-primary p-6 pb-16 text-white relative overflow-hidden shrink-0 rounded-b-[2.5rem]">
+                    <div class="absolute top-0 right-0 p-5 opacity-[0.07] blur-sm pointer-events-none">
+                        <i class="ph-fill ph-gear text-8xl"></i>
+                    </div>
+                    <div class="flex items-center gap-4 relative z-10">
+                        <div class="w-14 h-14 bg-white/10 rounded-full flex items-center justify-center border-2 border-white/20 shrink-0">
+                            <i class="ph-fill ph-user text-3xl text-white/80"></i>
+                        </div>
+                        <div class="min-w-0 flex-1">
+                            <div class="flex items-center gap-2">
+                                <p class="font-bold text-base leading-tight truncate" id="settingsName">User</p>
+                                <button onclick="app.openSettingsSheet('settingsProfileSheet')" class="shrink-0 w-6 h-6 rounded-full bg-white/15 flex items-center justify-center hover:bg-white/25 transition active:scale-90">
+                                    <i class="ph-fill ph-pencil-simple text-white text-xs"></i>
+                                </button>
+                            </div>
+                            <p class="text-xs text-white/50 mt-0.5 truncate" id="settingsEmail">user@example.com</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Speed Dial Nav -->
+                <div class="px-4 -mt-10 relative z-20">
+                    <div class="bg-white rounded-2xl shadow-lg border border-gray-100 p-1.5 flex justify-center gap-1">
+                        <button onclick="app.switchSettingsTab('faq')" id="settingsTabBtn-faq" class="settings-tab-btn flex-1 flex items-center justify-center gap-2 py-3 px-2 rounded-xl text-xs font-bold transition-all text-gray-500 hover:bg-gray-50">
+                            <i class="ph-fill ph-question text-base"></i>
+                            <span>FAQ</span>
+                        </button>
+                        <button onclick="app.switchSettingsTab('settings')" id="settingsTabBtn-settings" class="settings-tab-btn flex-1 flex items-center justify-center gap-2 py-3 px-2 rounded-xl text-xs font-bold transition-all bg-primary text-white">
+                            <i class="ph-fill ph-gear text-base"></i>
+                            <span>Settings</span>
+                        </button>
+                        <button onclick="app.switchSettingsTab('kosakata')" id="settingsTabBtn-kosakata" class="settings-tab-btn flex-1 flex items-center justify-center gap-2 py-3 px-2 rounded-xl text-xs font-bold transition-all text-gray-500 hover:bg-gray-50">
+                            <i class="ph-fill ph-translate text-base"></i>
+                            <span>Kosakata</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Content Container -->
+                <div class="px-4 mt-4 space-y-3 pb-8">
+
+                    <!-- SETTINGS PANEL (default visible) -->
+                    <div id="settingsPanel-settings" class="settings-panel space-y-3">
+
+                        <!-- Umum -->
+                        <p class="text-[10px] font-bold uppercase tracking-widest text-gray-400 px-1 flex items-center gap-1.5"><i class="ph-fill ph-gear"></i> Umum</p>
+                        <div class="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+                            <button onclick="app.openSettingsSheet('settingsProfileSheet')" class="w-full flex items-center gap-4 px-5 py-4 hover:bg-gray-50 active:bg-gray-100 transition border-b border-gray-50">
+                                <div class="w-10 h-10 rounded-2xl bg-primary/10 flex items-center justify-center shrink-0"><i class="ph-fill ph-user-circle text-primary text-lg"></i></div>
+                                <div class="flex-1 text-left"><p class="text-sm font-bold text-primary">Edit Profil</p><p class="text-[11px] text-gray-400">Ganti nama tampilan akun</p></div>
+                                <i class="ph-bold ph-caret-right text-gray-300 text-sm"></i>
+                            </button>
+                            <button onclick="app.openSettingsSheet('settingsAccountsSheet')" class="w-full flex items-center gap-4 px-5 py-4 hover:bg-gray-50 active:bg-gray-100 transition border-b border-gray-50">
+                                <div class="w-10 h-10 rounded-2xl bg-secondary/10 flex items-center justify-center shrink-0"><i class="ph-fill ph-bank text-secondary text-lg"></i></div>
+                                <div class="flex-1 text-left"><p class="text-sm font-bold text-primary">Kelola Akun</p><p class="text-[11px] text-gray-400">Tambah &amp; atur akun kamu</p></div>
+                                <i class="ph-bold ph-caret-right text-gray-300 text-sm"></i>
+                            </button>
+                            <button onclick="app.openSettingsSheet('settingsCategoriesSheet')" class="w-full flex items-center gap-4 px-5 py-4 hover:bg-gray-50 active:bg-gray-100 transition">
+                                <div class="w-10 h-10 rounded-2xl bg-purple-500/10 flex items-center justify-center shrink-0"><i class="ph-fill ph-tag text-purple-500 text-lg"></i></div>
+                                <div class="flex-1 text-left"><p class="text-sm font-bold text-primary">Kelola Kategori</p><p class="text-[11px] text-gray-400">Kustomisasi kategori transaksi</p></div>
+                                <i class="ph-bold ph-caret-right text-gray-300 text-sm"></i>
+                            </button>
+                        </div>
+
+                        <!-- Tampilan -->
+                        <p class="text-[10px] font-bold uppercase tracking-widest text-gray-400 px-1 flex items-center gap-1.5"><i class="ph-fill ph-layout"></i> Tampilan</p>
+                        <div class="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+                            <button onclick="app.openSettingsSheet('settingsDashboardSheet')" class="w-full flex items-center gap-4 px-5 py-4 hover:bg-gray-50 active:bg-gray-100 transition border-b border-gray-50">
+                                <div class="w-10 h-10 rounded-2xl bg-tertiary/10 flex items-center justify-center shrink-0"><i class="ph-fill ph-layout text-tertiary text-lg"></i></div>
+                                <div class="flex-1 text-left"><p class="text-sm font-bold text-primary">Tampilan Dashboard</p><p class="text-[11px] text-gray-400">Atur card yang ditampilkan</p></div>
+                                <i class="ph-bold ph-caret-right text-gray-300 text-sm"></i>
+                            </button>
+                            <button onclick="app.openSettingsSheet('settingsBudgetSheet')" class="w-full flex items-center gap-4 px-5 py-4 hover:bg-gray-50 active:bg-gray-100 transition border-b border-gray-50">
+                                <div class="w-10 h-10 rounded-2xl bg-success/10 flex items-center justify-center shrink-0"><i class="ph-fill ph-target text-success text-lg"></i></div>
+                                <div class="flex-1 text-left"><p class="text-sm font-bold text-primary">Budget Bulanan</p><p class="text-[11px] text-gray-400">Atur batas pengeluaran per bulan</p></div>
+                                <i class="ph-bold ph-caret-right text-gray-300 text-sm"></i>
+                            </button>
+                            <button onclick="app.openSettingsSheet('settingsPaydaySheet')" class="w-full flex items-center gap-4 px-5 py-4 hover:bg-gray-50 active:bg-gray-100 transition">
+                                <div class="w-10 h-10 rounded-2xl bg-indigo-500/10 flex items-center justify-center shrink-0"><i class="ph-fill ph-calendar-check text-indigo-500 text-lg"></i></div>
+                                <div class="flex-1 text-left"><p class="text-sm font-bold text-primary">Tanggal Gajian</p><p class="text-[11px] text-gray-400">Atur tanggal penerimaan gaji</p></div>
+                                <i class="ph-bold ph-caret-right text-gray-300 text-sm"></i>
+                            </button>
+                        </div>
+
+                        <!-- AI & Bot -->
+                        <p class="text-[10px] font-bold uppercase tracking-widest text-gray-400 px-1 flex items-center gap-1.5"><i class="ph-fill ph-robot"></i> AI &amp; Bot</p>
+                        <div class="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+                            <button onclick="app.openSettingsSheet('settingsAISheet')" class="w-full flex items-center gap-4 px-5 py-4 hover:bg-gray-50 active:bg-gray-100 transition">
+                                <div class="w-10 h-10 rounded-2xl bg-purple-500/10 flex items-center justify-center shrink-0"><i class="ph-fill ph-brain text-purple-600 text-lg"></i></div>
+                                <div class="flex-1 text-left"><p class="text-sm font-bold text-primary">AI Assistant</p><p class="text-[11px] text-gray-400">Konfigurasi Gemini API Key</p></div>
+                                <i class="ph-bold ph-caret-right text-gray-300 text-sm"></i>
+                            </button>
+                        </div>
+
+                        <!-- Lainnya -->
+                        <p class="text-[10px] font-bold uppercase tracking-widest text-gray-400 px-1 flex items-center gap-1.5"><i class="ph-fill ph-sliders"></i> Lainnya</p>
+                        <div class="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+                            <div class="w-full flex items-center gap-4 px-5 py-4 border-b border-gray-50">
+                                <div class="w-10 h-10 rounded-2xl bg-green-500/10 flex items-center justify-center shrink-0"><i class="ph-fill ph-speaker-high text-green-500 text-lg" id="sfxSettingIcon"></i></div>
+                                <div class="flex-1 text-left"><p class="text-sm font-bold text-primary">Efek Suara</p><p class="text-[11px] text-gray-400" id="sfxSettingDesc">Koin &amp; navigasi aktif</p></div>
+                                <button onclick="app.toggleSfx()" id="sfxToggleBtn" class="relative w-11 h-6 rounded-full bg-green-500"><span id="sfxToggleThumb" class="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow translate-x-5 transition-transform"></span></button>
+                            </div>
+                            <div class="px-5 py-4">
+                                <div class="flex items-center gap-3 mb-3">
+                                    <div class="w-10 h-10 rounded-2xl bg-blue-500/10 flex items-center justify-center shrink-0"><i class="ph-fill ph-database text-blue-500 text-lg"></i></div>
+                                    <div><p class="text-sm font-bold text-primary">Backup &amp; Restore</p><p class="text-[11px] text-gray-400">Export atau import data</p></div>
+                                </div>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <button onclick="app.exportData()" class="flex items-center justify-center gap-2 py-2.5 bg-blue-50 text-blue-600 rounded-xl text-xs font-bold hover:bg-blue-100 active:scale-[0.98] transition"><i class="ph-fill ph-download-simple text-sm"></i> Export</button>
+                                    <button onclick="app.triggerImport()" class="flex items-center justify-center gap-2 py-2.5 bg-green-50 text-green-600 rounded-xl text-xs font-bold hover:bg-green-100 active:scale-[0.98] transition"><i class="ph-fill ph-upload-simple text-sm"></i> Import</button>
+                                </div>
+                            </div>
+                        </div>
+                        <input type="file" id="importFileInput" accept=".json" class="hidden" onchange="app.handleImportFile(event)">
+
+                        <!-- App Info -->
+                        <div class="bg-white rounded-3xl px-5 py-4 border border-gray-100 shadow-sm flex items-center justify-between">
+                            <div>
+                                <p class="text-xs font-bold text-gray-500">Dirhamku</p>
+                                <p class="text-[10px] text-gray-400">by @asashades &middot; &copy; 2026<br>Version <span id="settingsVersion">5.0</span> <span id="updateStatusBadge" class="px-2 py-0.5 rounded-full text-[9px] font-bold bg-gray-100 text-gray-500 ml-1"><i class="ph ph-spinner mr-0.5 animate-spin"></i>Memuat...</span></p>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <img src="/icons/icon-192.svg" class="w-10 h-10 rounded-xl">
+                                <button onclick="updateManager.checkForUpdate(true)" class="px-3 py-1.5 bg-primary/10 text-primary text-[10px] font-bold rounded-lg hover:bg-primary/20 transition active:scale-95"><i class="ph ph-arrows-clockwise text-xs"></i> Cek Update</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- FAQ PANEL -->
+                    <div id="settingsPanel-faq" class="settings-panel hidden space-y-3">
+                        <p class="text-[10px] font-bold uppercase tracking-widest text-gray-400 px-1">Panduan &amp; FAQ</p>
+                        <div class="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+                            <div class="border-b border-gray-50">
+                                <button onclick="this.nextElementSibling.classList.toggle('hidden');this.querySelector('.fc').classList.toggle('rotate-90')" class="w-full flex items-center gap-3 px-5 py-4 text-left active:bg-gray-50 transition">
+                                    <div class="w-9 h-9 rounded-2xl bg-primary/10 flex items-center justify-center shrink-0"><i class="ph-fill ph-robot text-primary text-base"></i></div>
+                                    <p class="flex-1 text-sm font-bold text-primary">Cara pakai AI Transaksi</p>
+                                    <i class="ph-bold ph-caret-right fc text-gray-300 text-sm shrink-0 transition-transform duration-200"></i>
+                                </button>
+                                <div class="faq-body hidden px-5 pb-4">
+                                    <div class="bg-primary/5 rounded-2xl p-4 space-y-2.5 text-[11px] text-gray-600 leading-relaxed">
+                                        <p>Ketuk tombol <span class="font-bold text-primary">+</span> di tengah bottom bar untuk buka chat <span class="font-bold">Asa</span>.</p>
+                                        <div class="space-y-1.5 my-1">
+                                            <div class="bg-white rounded-xl px-3 py-2 text-xs font-medium text-gray-700 border border-gray-100">&ldquo;Tadi beli kopi 35rb sama makan siang 50rb&rdquo;</div>
+                                            <div class="bg-white rounded-xl px-3 py-2 text-xs font-medium text-gray-700 border border-gray-100">&ldquo;Terima gaji 8 juta kemarin&rdquo;</div>
+                                            <div class="bg-white rounded-xl px-3 py-2 text-xs font-medium text-gray-700 border border-gray-100">&ldquo;Transfer dari BCA ke GoPay 200k&rdquo;</div>
+                                        </div>
+                                        <p class="text-[10px] text-gray-400">💡 Butuh Gemini API Key? Masukkan di Settings &rarr; AI Assistant.</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="border-b border-gray-50">
+                                <button onclick="this.nextElementSibling.classList.toggle('hidden');this.querySelector('.fc').classList.toggle('rotate-90')" class="w-full flex items-center gap-3 px-5 py-4 text-left active:bg-gray-50 transition">
+                                    <div class="w-9 h-9 rounded-2xl bg-violet-500/10 flex items-center justify-center shrink-0"><i class="ph-fill ph-tag text-violet-500 text-base"></i></div>
+                                    <p class="flex-1 text-sm font-bold text-primary">Must, Want &amp; Need</p>
+                                    <i class="ph-bold ph-caret-right fc text-gray-300 text-sm shrink-0 transition-transform duration-200"></i>
+                                </button>
+                                <div class="faq-body hidden px-5 pb-4">
+                                    <div class="bg-violet-50 rounded-2xl p-4 space-y-3 text-[11px] text-gray-600 leading-relaxed">
+                                        <p>Setiap kategori expense bisa dikasih label <span class="font-bold">nature</span>:</p>
+                                        <div class="flex gap-3 items-start"><span class="shrink-0 bg-red-100 text-red-600 font-bold text-[10px] px-2 py-0.5 rounded-full mt-0.5">Must</span><p><span class="font-semibold">Kewajiban</span> &mdash; wajib ada. Contoh: sewa kos, bensin, tagihan.</p></div>
+                                        <div class="flex gap-3 items-start"><span class="shrink-0 bg-amber-100 text-amber-600 font-bold text-[10px] px-2 py-0.5 rounded-full mt-0.5">Need</span><p><span class="font-semibold">Kebutuhan</span> &mdash; penting tapi bisa dikurangin.</p></div>
+                                        <div class="flex gap-3 items-start"><span class="shrink-0 bg-purple-100 text-purple-600 font-bold text-[10px] px-2 py-0.5 rounded-full mt-0.5">Want</span><p><span class="font-semibold">Keinginan</span> &mdash; seneng-seneng, bisa ditunda.</p></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- 3. Skor Keuangan -->
+                            <div class="border-b border-gray-50">
+                                <button onclick="this.nextElementSibling.classList.toggle('hidden');this.querySelector('.fc').classList.toggle('rotate-90')" class="w-full flex items-center gap-3 px-5 py-4 text-left active:bg-gray-50 transition">
+                                    <div class="w-9 h-9 rounded-2xl bg-yellow-500/10 flex items-center justify-center shrink-0"><i class="ph-fill ph-medal text-yellow-500 text-base"></i></div>
+                                    <p class="flex-1 text-sm font-bold text-primary">Skor Keuangan dihitung gimana?</p>
+                                    <i class="ph-bold ph-caret-right fc text-gray-300 text-sm shrink-0 transition-transform duration-200"></i>
+                                </button>
+                                <div class="faq-body hidden px-5 pb-4">
+                                    <div class="bg-yellow-50 rounded-2xl p-4 space-y-3 text-[11px] text-gray-600 leading-relaxed">
+                                        <p>Skor 0&ndash;100 yang ngukur kondisi keuangan bulan ini dari 5 komponen:</p>
+                                        <div class="space-y-2">
+                                            <div class="flex justify-between items-center bg-white rounded-xl px-3 py-2 border border-yellow-100">
+                                                <p class="font-semibold">Needs vs Wants</p><span class="text-yellow-600 font-bold">25 poin</span>
+                                            </div>
+                                            <div class="flex justify-between items-center bg-white rounded-xl px-3 py-2 border border-yellow-100">
+                                                <p class="font-semibold">Fixed Cost Burden</p><span class="text-yellow-600 font-bold">20 poin</span>
+                                            </div>
+                                            <div class="flex justify-between items-center bg-white rounded-xl px-3 py-2 border border-yellow-100">
+                                                <p class="font-semibold">Emergency Fund</p><span class="text-yellow-600 font-bold">20 poin</span>
+                                            </div>
+                                            <div class="flex justify-between items-center bg-white rounded-xl px-3 py-2 border border-yellow-100">
+                                                <p class="font-semibold">Savings Rate</p><span class="text-yellow-600 font-bold">20 poin</span>
+                                            </div>
+                                            <div class="flex justify-between items-center bg-white rounded-xl px-3 py-2 border border-yellow-100">
+                                                <p class="font-semibold">Konsistensi Tracking</p><span class="text-yellow-600 font-bold">15 poin</span>
+                                            </div>
+                                        </div>
+                                        <p>Skor <span class="font-bold text-green-600">80+</span> = Excellent &bull; <span class="font-bold text-blue-600">60&ndash;79</span> = Good &bull; <span class="font-bold text-yellow-600">40&ndash;59</span> = Fair &bull; <span class="font-bold text-red-600">&lt;40</span> = Needs Work</p>
+                                        <p class="text-[10px] text-gray-400">💡 Cek detail di tab Report &rarr; scroll ke bawah bagian Skor Keuangan.</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- 4. Financial Health -->
+                            <div class="border-b border-gray-50">
+                                <button onclick="this.nextElementSibling.classList.toggle('hidden');this.querySelector('.fc').classList.toggle('rotate-90')" class="w-full flex items-center gap-3 px-5 py-4 text-left active:bg-gray-50 transition">
+                                    <div class="w-9 h-9 rounded-2xl bg-teal-500/10 flex items-center justify-center shrink-0"><i class="ph-fill ph-heartbeat text-teal-500 text-base"></i></div>
+                                    <p class="flex-1 text-sm font-bold text-primary">Financial Health di Report</p>
+                                    <i class="ph-bold ph-caret-right fc text-gray-300 text-sm shrink-0 transition-transform duration-200"></i>
+                                </button>
+                                <div class="faq-body hidden px-5 pb-4">
+                                    <div class="bg-teal-50 rounded-2xl p-4 space-y-2.5 text-[11px] text-gray-600 leading-relaxed">
+                                        <p>Tab Report punya section <span class="font-bold text-teal-600">Skor Keuangan</span> yang ngukur kondisi finansial bulan ini dari 5 komponen:</p>
+                                        <div class="space-y-1.5">
+                                            <div class="flex gap-2 items-start"><span class="text-teal-500 shrink-0 mt-0.5">&#9679;</span><p><span class="font-semibold">Needs vs Wants</span> &mdash; seberapa efisien komposisi pengeluaran kebutuhan vs keinginan lo terhadap income.</p></div>
+                                            <div class="flex gap-2 items-start"><span class="text-teal-500 shrink-0 mt-0.5">&#9679;</span><p><span class="font-semibold">Fixed Cost Burden</span> &mdash; % pengeluaran kewajiban (Must) dari total income. Idealnya di bawah 30%.</p></div>
+                                            <div class="flex gap-2 items-start"><span class="text-teal-500 shrink-0 mt-0.5">&#9679;</span><p><span class="font-semibold">Emergency Fund</span> &mdash; cek apakah dana darurat udah cukup (target minimal 3 bulan pengeluaran).</p></div>
+                                            <div class="flex gap-2 items-start"><span class="text-teal-500 shrink-0 mt-0.5">&#9679;</span><p><span class="font-semibold">Savings Rate</span> &mdash; % income yang berhasil lo simpan setelah semua pengeluaran. Target ideal &ge;20%.</p></div>
+                                            <div class="flex gap-2 items-start"><span class="text-teal-500 shrink-0 mt-0.5">&#9679;</span><p><span class="font-semibold">Tracking Consistency</span> &mdash; seberapa rutin lo catat transaksi setiap hari dalam sebulan.</p></div>
+                                        </div>
+                                        <p class="text-[10px] text-gray-400">💡 Tandai akun sebagai Emergency Fund di Settings &rarr; Kelola Akun untuk tracking dana darurat.</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- 5. Weekday vs Weekend -->
+                            <div class="border-b border-gray-50">
+                                <button onclick="this.nextElementSibling.classList.toggle('hidden');this.querySelector('.fc').classList.toggle('rotate-90')" class="w-full flex items-center gap-3 px-5 py-4 text-left active:bg-gray-50 transition">
+                                    <div class="w-9 h-9 rounded-2xl bg-blue-500/10 flex items-center justify-center shrink-0"><i class="ph-fill ph-calendar-dots text-blue-500 text-base"></i></div>
+                                    <p class="flex-1 text-sm font-bold text-primary">Weekday vs Weekend maksudnya?</p>
+                                    <i class="ph-bold ph-caret-right fc text-gray-300 text-sm shrink-0 transition-transform duration-200"></i>
+                                </button>
+                                <div class="faq-body hidden px-5 pb-4">
+                                    <div class="bg-blue-50 rounded-2xl p-4 space-y-2.5 text-[11px] text-gray-600 leading-relaxed">
+                                        <p>Salah satu insight di Report yang bandingin pola belanja lo antara hari kerja vs weekend:</p>
+                                        <div class="space-y-1.5">
+                                            <div class="flex gap-2 items-start"><span class="text-blue-500 shrink-0 mt-0.5">&#9679;</span><p><span class="font-semibold">Weekday</span> = Senin&ndash;Jumat &mdash; biasanya belanja rutin, makan siang, transportasi.</p></div>
+                                            <div class="flex gap-2 items-start"><span class="text-blue-500 shrink-0 mt-0.5">&#9679;</span><p><span class="font-semibold">Weekend</span> = Sabtu&ndash;Minggu &mdash; cenderung lebih royal: jajan, nongkrong, hiburan.</p></div>
+                                        </div>
+                                        <p>Kalau pengeluaran weekend jauh lebih tinggi per hari-nya, itu sinyal buat lebih mindful pas weekend. Rata-rata per hari yang ditampilkan sudah dinormalisasi jumlah hari masing-masing.</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- 6. Spending DNA -->
+                            <div class="border-b border-gray-50">
+                                <button onclick="this.nextElementSibling.classList.toggle('hidden');this.querySelector('.fc').classList.toggle('rotate-90')" class="w-full flex items-center gap-3 px-5 py-4 text-left active:bg-gray-50 transition">
+                                    <div class="w-9 h-9 rounded-2xl bg-pink-500/10 flex items-center justify-center shrink-0"><i class="ph-fill ph-dna text-pink-500 text-base"></i></div>
+                                    <p class="flex-1 text-sm font-bold text-primary">Spending DNA kamu apa?</p>
+                                    <i class="ph-bold ph-caret-right fc text-gray-300 text-sm shrink-0 transition-transform duration-200"></i>
+                                </button>
+                                <div class="faq-body hidden px-5 pb-4">
+                                    <div class="bg-pink-50 rounded-2xl p-4 space-y-2.5 text-[11px] text-gray-600 leading-relaxed">
+                                        <p>Spending DNA adalah tipe pola belanjamu berdasarkan data transaksi bulan ini. Ada 5 tipe:</p>
+                                        <div class="space-y-2">
+                                            <div class="flex gap-2 items-start"><span class="shrink-0 bg-yellow-100 text-yellow-700 font-bold text-[10px] px-2 py-0.5 rounded-full mt-0.5">💰 Cuan Collector</span><p>Saving rate tinggi, pengeluaran terkontrol. Lo hemat dan disiplin.</p></div>
+                                            <div class="flex gap-2 items-start"><span class="shrink-0 bg-green-100 text-green-700 font-bold text-[10px] px-2 py-0.5 rounded-full mt-0.5">⚖️ Balanced</span><p>Seimbang antara saving &amp; spending. Hidup lo stabil dan teratur.</p></div>
+                                            <div class="flex gap-2 items-start"><span class="shrink-0 bg-purple-100 text-purple-700 font-bold text-[10px] px-2 py-0.5 rounded-full mt-0.5">✨ Lifestyle Inflator</span><p>Pengeluaran Want tinggi. Lo suka menikmati hidup, tapi perlu jaga saving.</p></div>
+                                            <div class="flex gap-2 items-start"><span class="shrink-0 bg-red-100 text-red-700 font-bold text-[10px] px-2 py-0.5 rounded-full mt-0.5">🔥 Survival Mode</span><p>Pengeluaran melebihi atau hampir sama dengan income. Waktunya evaluasi!</p></div>
+                                            <div class="flex gap-2 items-start"><span class="shrink-0 bg-gray-100 text-gray-600 font-bold text-[10px] px-2 py-0.5 rounded-full mt-0.5">👻 Ghost Tracker</span><p>Data transaksi masih sedikit. Catat lebih rutin biar analisisnya akurat.</p></div>
+                                        </div>
+                                        <p class="text-[10px] text-gray-400">💡 Spending DNA tampil di bagian Deep Insight tab Report.</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- 7. Latte Factor -->
+                            <div class="border-b border-gray-50">
+                                <button onclick="this.nextElementSibling.classList.toggle('hidden');this.querySelector('.fc').classList.toggle('rotate-90')" class="w-full flex items-center gap-3 px-5 py-4 text-left active:bg-gray-50 transition">
+                                    <div class="w-9 h-9 rounded-2xl bg-amber-500/10 flex items-center justify-center shrink-0"><i class="ph-fill ph-coffee text-amber-500 text-base"></i></div>
+                                    <p class="flex-1 text-sm font-bold text-primary">Latte Factor itu apa?</p>
+                                    <i class="ph-bold ph-caret-right fc text-gray-300 text-sm shrink-0 transition-transform duration-200"></i>
+                                </button>
+                                <div class="faq-body hidden px-5 pb-4">
+                                    <div class="bg-amber-50 rounded-2xl p-4 space-y-2.5 text-[11px] text-gray-600 leading-relaxed">
+                                        <p><span class="font-bold">Latte Factor</span> adalah pengeluaran kecil yang sering banget diulang sampai jumlahnya signifikan kalau diakumulasi.</p>
+                                        <p>Dirhamku deteksi otomatis: kalau kata kunci yang sama muncul <span class="font-bold text-amber-700">&ge;3x</span> dalam uraian transaksi bulan ini, itu masuk radar Latte Factor.</p>
+                                        <p>Contoh: &ldquo;kopi&rdquo; muncul 12x &rarr; total Rp 420.000/bulan &rarr; Rp 5 juta/tahun.</p>
+                                        <p class="text-[10px] text-gray-400">💡 Cek Latte Factor di Deep Insight tab Report. Bukan soal berhenti, tapi sadar berapa yang keluar.</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- 8. Konsistensi Bulanan -->
+                            <div class="border-b border-gray-50">
+                                <button onclick="this.nextElementSibling.classList.toggle('hidden');this.querySelector('.fc').classList.toggle('rotate-90')" class="w-full flex items-center gap-3 px-5 py-4 text-left active:bg-gray-50 transition">
+                                    <div class="w-9 h-9 rounded-2xl bg-orange-500/10 flex items-center justify-center shrink-0"><i class="ph-fill ph-calendar-check text-orange-500 text-base"></i></div>
+                                    <p class="flex-1 text-sm font-bold text-primary">Card Konsistensi Bulanan</p>
+                                    <i class="ph-bold ph-caret-right fc text-gray-300 text-sm shrink-0 transition-transform duration-200"></i>
+                                </button>
+                                <div class="faq-body hidden px-5 pb-4">
+                                    <div class="bg-orange-50 rounded-2xl p-4 space-y-2.5 text-[11px] text-gray-600 leading-relaxed">
+                                        <p>Card ini ngitung dua hal per bulan (reset tiap bulan baru):</p>
+                                        <div class="space-y-2">
+                                            <div class="flex gap-2 items-start"><span class="text-orange-500 shrink-0 font-bold mt-0.5">✏️</span><p><span class="font-semibold">Tracking Transaksi</span> &mdash; berapa hari lo catat minimal 1 transaksi (atau aktifkan No Spend Day).</p></div>
+                                            <div class="flex gap-2 items-start"><span class="text-blue-500 shrink-0 font-bold mt-0.5">🛡️</span><p><span class="font-semibold">Di Bawah Budget</span> &mdash; berapa hari total expense &le; budget harian (budget bulanan &divide; jumlah hari).</p></div>
+                                        </div>
+                                        <p>Geser bulan di Home buat liat konsistensi bulan-bulan sebelumnya juga.</p>
+                                        <p class="text-[10px] text-gray-400">💡 Budget harian = Monthly Budget (Settings) dibagi total hari dalam bulan itu.</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- 9. No Spend Day -->
+                            <div class="border-b border-gray-50">
+                                <button onclick="this.nextElementSibling.classList.toggle('hidden');this.querySelector('.fc').classList.toggle('rotate-90')" class="w-full flex items-center gap-3 px-5 py-4 text-left active:bg-gray-50 transition">
+                                    <div class="w-9 h-9 rounded-2xl bg-green-500/10 flex items-center justify-center shrink-0"><i class="ph-fill ph-leaf text-green-500 text-base"></i></div>
+                                    <p class="flex-1 text-sm font-bold text-primary">No Spend Day itu gimana?</p>
+                                    <i class="ph-bold ph-caret-right fc text-gray-300 text-sm shrink-0 transition-transform duration-200"></i>
+                                </button>
+                                <div class="faq-body hidden px-5 pb-4">
+                                    <div class="bg-green-50 rounded-2xl p-4 space-y-2.5 text-[11px] text-gray-600 leading-relaxed">
+                                        <p>Tantangan harian buat gak ngeluarin duit sama sekali. Caranya:</p>
+                                        <div class="space-y-1.5">
+                                            <div class="flex gap-2 items-start"><span class="text-green-600 font-bold shrink-0">1.</span><p>Kalau hari ini lo 0 pengeluaran, tombol <span class="font-bold">No Spend Day</span> aktif di Home.</p></div>
+                                            <div class="flex gap-2 items-start"><span class="text-green-600 font-bold shrink-0">2.</span><p>Tap tombolnya &rarr; hari itu otomatis dihitung sebagai hari konsisten di card Konsistensi Bulanan.</p></div>
+                                            <div class="flex gap-2 items-start"><span class="text-green-600 font-bold shrink-0">3.</span><p>Kalau setelahnya lo input expense di hari yang sama, status No Spend Day otomatis dicabut.</p></div>
+                                        </div>
+                                        <p class="text-[10px] text-gray-400">💡 No Spend Day gak bisa diaktifkan kalau sudah ada expense di hari itu.</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- 10. Payday Countdown -->
+                            <div class="border-b border-gray-50">
+                                <button onclick="this.nextElementSibling.classList.toggle('hidden');this.querySelector('.fc').classList.toggle('rotate-90')" class="w-full flex items-center gap-3 px-5 py-4 text-left active:bg-gray-50 transition">
+                                    <div class="w-9 h-9 rounded-2xl bg-indigo-500/10 flex items-center justify-center shrink-0"><i class="ph-fill ph-money-wavy text-indigo-500 text-base"></i></div>
+                                    <p class="flex-1 text-sm font-bold text-primary">Payday Countdown &amp; Sisa Budget</p>
+                                    <i class="ph-bold ph-caret-right fc text-gray-300 text-sm shrink-0 transition-transform duration-200"></i>
+                                </button>
+                                <div class="faq-body hidden px-5 pb-4">
+                                    <div class="bg-indigo-50 rounded-2xl p-4 space-y-2.5 text-[11px] text-gray-600 leading-relaxed">
+                                        <p>Card ini ngitung mundur ke tanggal gajian lo:</p>
+                                        <div class="space-y-1.5">
+                                            <div class="flex gap-2 items-start"><span class="text-indigo-500 shrink-0 mt-0.5">&#9679;</span><p><span class="font-semibold">Sisa hari</span> &mdash; berapa hari lagi sampai tanggal gaji.</p></div>
+                                            <div class="flex gap-2 items-start"><span class="text-indigo-500 shrink-0 mt-0.5">&#9679;</span><p><span class="font-semibold">Budget per hari</span> &mdash; (income &minus; target saving 20%) dikurangi total spending bulan ini, lalu dibagi sisa hari. Ini batas belanja harian lo biar target saving tetap tercapai.</p></div>
+                                            <div class="flex gap-2 items-start"><span class="text-indigo-500 shrink-0 mt-0.5">&#9679;</span><p><span class="font-semibold">Kalender titik</span> &mdash; hari hijau = sudah catat transaksi, merah = ada pengeluaran over budget, abu = belum ada catatan.</p></div>
+                                        </div>
+                                        <p class="text-[10px] text-gray-400">💡 Set tanggal gajian di Settings &rarr; Budget &amp; Gajian.</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- 11. Pengeluaran Outlier -->
+                            <div class="border-b border-gray-50">
+                                <button onclick="this.nextElementSibling.classList.toggle('hidden');this.querySelector('.fc').classList.toggle('rotate-90')" class="w-full flex items-center gap-3 px-5 py-4 text-left active:bg-gray-50 transition">
+                                    <div class="w-9 h-9 rounded-2xl bg-rose-500/10 flex items-center justify-center shrink-0"><i class="ph-fill ph-warning-circle text-rose-500 text-base"></i></div>
+                                    <p class="flex-1 text-sm font-bold text-primary">Pengeluaran Outlier Insight</p>
+                                    <i class="ph-bold ph-caret-right fc text-gray-300 text-sm shrink-0 transition-transform duration-200"></i>
+                                </button>
+                                <div class="faq-body hidden px-5 pb-4">
+                                    <div class="bg-rose-50 rounded-2xl p-4 space-y-2.5 text-[11px] text-gray-600 leading-relaxed">
+                                        <p>Insight ini mendeteksi transaksi yang <span class="font-bold text-rose-600">jauh lebih besar</span> dibanding rata-rata transaksi harian kamu di kategori yang sama.</p>
+                                        <p>Misalnya rata-rata kamu makan 50rb/hari, tapi tiba-tiba ada transaksi makan 500rb. Ini akan masuk ke radar Outlier biar kamu sadar ada anomali pengeluaran.</p>
+                                        <p class="text-[10px] text-gray-400">💡 Cek Outlier di Deep Insight tab Report biar pengeluaran tak terduga bisa dievaluasi.</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- 12. Langganan Aktif -->
+                            <div class="border-b border-gray-50">
+                                <button onclick="this.nextElementSibling.classList.toggle('hidden');this.querySelector('.fc').classList.toggle('rotate-90')" class="w-full flex items-center gap-3 px-5 py-4 text-left active:bg-gray-50 transition">
+                                    <div class="w-9 h-9 rounded-2xl bg-cyan-500/10 flex items-center justify-center shrink-0"><i class="ph-fill ph-arrows-clockwise text-cyan-500 text-base"></i></div>
+                                    <p class="flex-1 text-sm font-bold text-primary">Langganan Aktif (Subscription)</p>
+                                    <i class="ph-bold ph-caret-right fc text-gray-300 text-sm shrink-0 transition-transform duration-200"></i>
+                                </button>
+                                <div class="faq-body hidden px-5 pb-4">
+                                    <div class="bg-cyan-50 rounded-2xl p-4 space-y-2.5 text-[11px] text-gray-600 leading-relaxed">
+                                        <p>Dirhamku mendeteksi transaksi berulang yang kamu bayar setiap bulan seperti <span class="font-bold">Netflix, Spotify, tagihan WiFi, dll</span>.</p>
+                                        <p>Fitur ini otomatis menjumlahkan semua langganan aktif kamu biar kamu tau persis berapa total uang yang hangus tiap bulan cuma buat bayar subscription.</p>
+                                        <p class="text-[10px] text-gray-400">💡 Kamu bisa batalin langganan yang jarang dipakai kalau totalnya udah kegedean.</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- 13. Export / Import -->
+                            <div class="border-b border-gray-50">
+                                <button onclick="this.nextElementSibling.classList.toggle('hidden');this.querySelector('.fc').classList.toggle('rotate-90')" class="w-full flex items-center gap-3 px-5 py-4 text-left active:bg-gray-50 transition">
+                                    <div class="w-9 h-9 rounded-2xl bg-gray-500/10 flex items-center justify-center shrink-0"><i class="ph-fill ph-database text-gray-500 text-base"></i></div>
+                                    <p class="flex-1 text-sm font-bold text-primary">Export &amp; Import Data</p>
+                                    <i class="ph-bold ph-caret-right fc text-gray-300 text-sm shrink-0 transition-transform duration-200"></i>
+                                </button>
+                                <div class="faq-body hidden px-5 pb-4">
+                                    <div class="bg-gray-50 rounded-2xl p-4 space-y-2.5 text-[11px] text-gray-600 leading-relaxed">
+                                        <p><span class="font-bold">Export</span> &mdash; download semua transaksi + profil kamu sebagai file <code class="bg-gray-200 px-1 rounded text-[10px]">.json</code>. Cocok buat backup sebelum ganti HP atau akun.</p>
+                                        <p><span class="font-bold">Import</span> &mdash; upload file backup. Ada 2 mode:</p>
+                                        <div class="space-y-1.5 ml-1">
+                                            <div class="flex gap-2 items-start"><span class="text-gray-500 font-bold shrink-0">+</span><p><span class="font-semibold">Merge</span> &mdash; gabungin data lama + baru, transaksi duplikat dilewati.</p></div>
+                                            <div class="flex gap-2 items-start"><span class="text-red-500 font-bold shrink-0">!</span><p><span class="font-semibold">Replace</span> &mdash; hapus semua data lama, ganti total dengan data dari file. <span class="text-red-500 font-semibold">Hati-hati, ini gak bisa di-undo!</span></p></div>
+                                        </div>
+                                        <p class="text-[10px] text-gray-400">💡 Ada preview transaksi sebelum import dikonfirmasi.</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <button onclick="handleLogout()" class="w-full bg-danger/10 text-danger font-bold py-4 rounded-3xl shadow-sm hover:bg-danger hover:text-white transition flex items-center justify-center gap-2 mt-4">
+                                <i class="ph-fill ph-sign-out text-lg"></i> LOGOUT
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- KOSAKATA PANEL -->
+                    <div id="settingsPanel-kosakata" class="settings-panel hidden space-y-3">
+                        <!-- Tabs -->
+                        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-1.5 flex">
+                            <button onclick="app.switchKosakataTab('kosakata')" id="kosakataTabBtn-kosakata" class="kosakata-tab-btn flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl text-xs font-bold transition-all bg-primary text-white">
+                                <i class="ph-fill ph-translate text-base"></i><span>Kosakata</span>
+                            </button>
+                            <button onclick="app.switchKosakataTab('perintah')" id="kosakataTabBtn-perintah" class="kosakata-tab-btn flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl text-xs font-bold transition-all text-gray-500 hover:bg-gray-50">
+                                <i class="ph-fill ph-terminal text-base"></i><span>Perintah</span>
+                            </button>
+                        </div>
+
+                        <!-- Kosakata Tab Content -->
+                        <div id="kosakataContent-kosakata" class="kosakata-content space-y-3">
+                            <p class="text-[11px] text-gray-500 leading-relaxed px-1">Ajari bot memetakan bahasa jajan harianmu ke kategori yang benar.</p>
+
+                            <!-- Pengeluaran -->
+                            <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                                <button onclick="app.toggleVocabularySection('expenseKeywords')" class="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-8 h-8 rounded-xl bg-red-100 flex items-center justify-center shrink-0"><i class="ph-fill ph-minus-circle text-red-500 text-sm"></i></div>
+                                        <div class="text-left"><p class="text-sm font-bold text-primary">Kata Pemicu Pengeluaran</p><p class="text-[10px] text-gray-400">Kata pemicu untuk catat pengeluaran</p></div>
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <span id="expenseKeywordsCount" class="text-[10px] font-bold text-gray-400">0 kata</span>
+                                        <i id="expenseKeywordsArrow" class="ph-bold ph-caret-right text-gray-400 text-sm transition-transform"></i>
+                                    </div>
+                                </button>
+                                <div id="expenseKeywordsContent" class="hidden border-t border-gray-100 p-4 space-y-3">
+                                    <p class="text-[10px] text-gray-400 mb-2">Daftar kata bawaan. Kamu bisa tambah kata kustom di bawah.</p>
+                                    <div id="expenseKeywordsList" class="flex flex-wrap gap-2"></div>
+                                    <div class="flex items-center gap-2 pt-2 border-t border-gray-100">
+                                        <input type="text" id="addExpenseKeywordInput" placeholder="Tambah kata kustom..." class="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-amber-400 transition">
+                                        <button onclick="app.addCustomKeyword('expense')" class="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center active:scale-95 transition"><i class="ph-bold ph-plus text-sm"></i></button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Pemasukan -->
+                            <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                                <button onclick="app.toggleVocabularySection('incomeKeywords')" class="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-8 h-8 rounded-xl bg-green-100 flex items-center justify-center shrink-0"><i class="ph-fill ph-plus-circle text-green-500 text-sm"></i></div>
+                                        <div class="text-left"><p class="text-sm font-bold text-primary">Kata Pemicu Pemasukan</p><p class="text-[10px] text-gray-400">Kata pemicu untuk catat pemasukan</p></div>
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <span id="incomeKeywordsCount" class="text-[10px] font-bold text-gray-400">0 kata</span>
+                                        <i id="incomeKeywordsArrow" class="ph-bold ph-caret-right text-gray-400 text-sm transition-transform"></i>
+                                    </div>
+                                </button>
+                                <div id="incomeKeywordsContent" class="hidden border-t border-gray-100 p-4 space-y-3">
+                                    <p class="text-[10px] text-gray-400 mb-2">Daftar kata bawaan. Kamu bisa tambah kata kustom di bawah.</p>
+                                    <div id="incomeKeywordsList" class="flex flex-wrap gap-2"></div>
+                                    <div class="flex items-center gap-2 pt-2 border-t border-gray-100">
+                                        <input type="text" id="addIncomeKeywordInput" placeholder="Tambah kata kustom..." class="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-amber-400 transition">
+                                        <button onclick="app.addCustomKeyword('income')" class="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center active:scale-95 transition"><i class="ph-bold ph-plus text-sm"></i></button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Kategori -->
+                            <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                                <button onclick="app.toggleVocabularySection('categoryKeywords')" class="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-8 h-8 rounded-xl bg-purple-100 flex items-center justify-center shrink-0"><i class="ph-fill ph-tag text-purple-500 text-sm"></i></div>
+                                        <div class="text-left"><p class="text-sm font-bold text-primary">Kosakata Kategori</p><p class="text-[10px] text-gray-400">Mapping kata ke kategori transaksi</p></div>
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <span id="categoryKeywordsCount" class="text-[10px] font-bold text-gray-400">0 kata</span>
+                                        <i id="categoryKeywordsArrow" class="ph-bold ph-caret-right text-gray-400 text-sm transition-transform"></i>
+                                    </div>
+                                </button>
+                                <div id="categoryKeywordsContent" class="hidden border-t border-gray-100 p-4 space-y-3">
+                                    <p class="text-[10px] text-gray-400 mb-2">Daftar kata bawaan. Kamu bisa tambah kata kustom di bawah.</p>
+                                    <div id="categoryKeywordsList" class="space-y-2"></div>
+                                    <div class="flex items-center gap-2 pt-2 border-t border-gray-100">
+                                        <input type="text" id="addCategoryKeywordInput" placeholder="Kata baru..." class="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-amber-400 transition">
+                                        <select id="addCategorySelect" class="bg-gray-50 border border-gray-200 rounded-xl px-2 py-2 text-sm outline-none focus:border-amber-400 transition text-primary"></select>
+                                        <button onclick="app.addCustomCategoryKeyword()" class="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center active:scale-95 transition"><i class="ph-bold ph-plus text-sm"></i></button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Kategori Standar -->
+                            <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                                <button onclick="app.toggleVocabularySection('standardCategories')" class="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-8 h-8 rounded-xl bg-blue-100 flex items-center justify-center shrink-0"><i class="ph-fill ph-squares-four text-blue-500 text-sm"></i></div>
+                                        <div class="text-left"><p class="text-sm font-bold text-primary">Kategori Standar</p><p class="text-[10px] text-gray-400">Daftar kategori yang tersedia</p></div>
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <span id="standardCategoriesCount" class="text-[10px] font-bold text-gray-400">0</span>
+                                        <i id="standardCategoriesArrow" class="ph-bold ph-caret-right text-gray-400 text-sm transition-transform"></i>
+                                    </div>
+                                </button>
+                                <div id="standardCategoriesContent" class="hidden border-t border-gray-100 p-4">
+                                    <div id="standardCategoriesList" class="space-y-2"></div>
+                                </div>
+                            </div>
+
+                            <!-- Action Buttons -->
+                            <div class="flex items-center gap-2">
+                                <button onclick="app.exportVocabulary()" class="flex-1 flex items-center justify-center gap-2 py-3 bg-blue-50 text-blue-600 rounded-xl text-xs font-bold hover:bg-blue-100 active:scale-[0.98] transition"><i class="ph-fill ph-download-simple text-sm"></i> Export Kosakata</button>
+                                <button onclick="app.triggerVocabularyImport()" class="flex-1 flex items-center justify-center gap-2 py-3 bg-green-50 text-green-600 rounded-xl text-xs font-bold hover:bg-green-100 active:scale-[0.98] transition"><i class="ph-fill ph-upload-simple text-sm"></i> Import</button>
+                            </div>
+                            <input type="file" id="vocabularyImportInput" accept=".json" class="hidden" onchange="app.handleVocabularyImport(event)">
+                        </div>
+
+                        <!-- Perintah Tab Content -->
+                        <div id="kosakataContent-perintah" class="kosakata-content hidden space-y-3">
+                            <div class="bg-amber-50 rounded-2xl p-4 flex gap-3">
+                                <i class="ph-fill ph-info text-amber-400 text-lg shrink-0 mt-0.5"></i>
+                                <p class="text-[11px] text-amber-700 leading-relaxed">Tambahkan kata kunci kustom untuk setiap perintah. Bot akan langsung menjalankan perintah tanpa menunggu AI.</p>
+                            </div>
+                            <div id="commandsList" class="space-y-3"></div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </main>
+
+        <!-- ====== OVERLAY: ACCOUNT OVERVIEW (Level 2) ====== -->
+        <div id="viewAccountOverview" class="absolute inset-0 z-[80] bg-gray-50 hidden flex-col" style="overscroll-behavior:contain">
+            <div class="bg-primary text-white px-5 pt-12 pb-6">
+                <div class="flex items-center gap-3 mb-4">
+                    <button onclick="app.closeAccountOverview()" class="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center active:scale-95 transition">
+                        <i class="ph-bold ph-arrow-left"></i>
+                    </button>
+                    <div>
+                        <p class="text-[10px] uppercase tracking-[0.2em] text-white/50 font-bold">Portfolio</p>
+                        <h2 class="text-lg font-bold font-heading leading-tight" id="overviewTitle">Account Overview</h2>
+                    </div>
+                </div>
+                <!-- Period selector -->
+                <div class="flex gap-2" id="overviewPeriodBtns">
+                    <button data-period="7D" onclick="app.setOverviewPeriod('7D')" class="overview-period-btn px-3 py-1 rounded-full text-[11px] font-bold transition bg-white text-primary">7D</button>
+                    <button data-period="1M" onclick="app.setOverviewPeriod('1M')" class="overview-period-btn px-3 py-1 rounded-full text-[11px] font-bold transition bg-white/10 text-white/70">1M</button>
+                    <button data-period="3M" onclick="app.setOverviewPeriod('3M')" class="overview-period-btn px-3 py-1 rounded-full text-[11px] font-bold transition bg-white/10 text-white/70">3M</button>
+                    <button data-period="YTD" onclick="app.setOverviewPeriod('YTD')" class="overview-period-btn px-3 py-1 rounded-full text-[11px] font-bold transition bg-white/10 text-white/70">YTD</button>
+                    <button data-period="ALL" onclick="app.setOverviewPeriod('ALL')" class="overview-period-btn px-3 py-1 rounded-full text-[11px] font-bold transition bg-white/10 text-white/70">ALL</button>
+                </div>
+            </div>
+            <!-- Balance Chart -->
+            <div class="px-4 -mt-1 bg-primary pb-4">
+                <div class="h-44 relative"><canvas id="overviewBalanceChart"></canvas></div>
+            </div>
+            <!-- Accounts list + stats -->
+            <div class="flex-1 overflow-y-auto no-scrollbar p-4 space-y-3">
+                <p class="text-[10px] uppercase tracking-[0.15em] text-gray-400 font-bold px-1">Akun Kamu</p>
+                <div id="overviewAccountCards" class="space-y-2.5"></div>
+            </div>
+        </div>
+
+        <!-- ====== OVERLAY: ACCOUNT DETAIL (Level 3) ====== -->
+        <div id="viewAccountDetail" class="absolute inset-0 z-[90] bg-gray-50 hidden flex-col" style="overscroll-behavior:contain">
+            <div class="bg-primary text-white px-5 pt-12 pb-5">
+                <div class="flex items-center gap-3 mb-1">
+                    <button onclick="app.closeAccountDetail()" class="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center active:scale-95 transition">
+                        <i class="ph-bold ph-arrow-left"></i>
+                    </button>
+                    <div class="flex items-center gap-2.5 min-w-0">
+                        <div id="detailAccIcon" class="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-base"></div>
+                        <div class="min-w-0">
+                            <p class="text-[10px] uppercase tracking-[0.15em] text-white/50 font-bold" id="detailAccType">Cash</p>
+                            <h2 class="text-lg font-bold font-heading leading-tight truncate" id="detailAccName">Akun</h2>
+                        </div>
+                    </div>
+                    <div class="ml-auto text-right shrink-0">
+                        <p class="text-[10px] text-white/50 font-bold">Balance</p>
+                        <p class="text-lg font-heading font-bold" id="detailAccBalance">Rp 0</p>
+                    </div>
+                </div>
+            </div>
+            <!-- Stats row -->
+            <div id="detailStatRow" class="grid grid-cols-3 gap-2 px-4 py-3 bg-white border-b border-gray-100"></div>
+            <!-- Charts -->
+            <div class="flex-1 overflow-y-auto no-scrollbar">
+                <div class="p-4 space-y-4">
+                    <!-- Spending Trend 6-month bar -->
+                    <div class="bg-white rounded-3xl p-4 border border-gray-100 shadow-sm">
+                        <p class="text-[10px] uppercase tracking-[0.15em] text-gray-400 font-bold mb-3">Tren Pengeluaran (6 Bulan)</p>
+                        <div class="h-36 relative"><canvas id="detailTrendChart"></canvas></div>
+                    </div>
+                    <!-- Category breakdown -->
+                    <div class="bg-white rounded-3xl p-4 border border-gray-100 shadow-sm">
+                        <p class="text-[10px] uppercase tracking-[0.15em] text-gray-400 font-bold mb-3">Breakdown Kategori <span class="text-gray-300 font-normal">(tap untuk filter)</span></p>
+                        <div class="flex gap-4 items-center">
+                            <div class="w-32 h-32 shrink-0 relative"><canvas id="detailCatChart"></canvas></div>
+                            <div id="detailCatLegend" class="flex-1 space-y-1.5 min-w-0"></div>
+                        </div>
+                    </div>
+                    <!-- Filtered Tx list -->
+                    <div id="detailTxSection" class="bg-white rounded-3xl p-4 border border-gray-100 shadow-sm">
+                        <div class="flex items-center justify-between mb-3">
+                            <p class="text-[10px] uppercase tracking-[0.15em] text-gray-400 font-bold" id="detailTxTitle">Semua Transaksi</p>
+                            <button id="detailClearFilter" onclick="app.clearDetailCatFilter()" class="hidden text-[10px] font-bold text-secondary">Reset Filter</button>
+                        </div>
+                        <div id="detailTxContainer" class="space-y-2"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ====== BOTTOM NAVIGATION BAR ====== -->
+        <nav id="bottomNav" class="relative w-full h-[80px] shrink-0 bg-white border-t border-gray-100 flex justify-evenly items-center shadow-[0_-10px_30px_rgba(0,0,0,0.02)] z-50 rounded-t-[30px] px-2">
+            <button onclick="app.switchTab('home')" class="nav-btn flex-1 flex flex-col items-center justify-center gap-1 text-gray-400 hover:text-primary transition" data-tab="home">
+                <i class="ph-fill ph-house text-[20px] transition-transform"></i><span class="text-[9px] font-bold tracking-wide">Home</span>
+            </button>
+            <button onclick="app.switchTab('transactions')" class="nav-btn flex-1 flex flex-col items-center justify-center gap-1 text-gray-400 hover:text-primary transition" data-tab="transactions">
+                <i class="ph-fill ph-list-dashes text-[20px] transition-transform"></i><span class="text-[9px] font-bold tracking-wide">History</span>
+            </button>
+            <div class="relative flex-1 flex justify-center -top-6">
+                <button onclick="app.switchTab('input')" class="nav-btn w-14 h-14 bg-gradient-to-tr from-secondary to-[#FFD15C] text-primary rounded-full shadow-[0_8px_20px_rgba(255,184,0,0.4)] flex items-center justify-center text-2xl border-4 border-[#e2e8f0] active:scale-95 transition-transform shrink-0" data-tab="input">
+                    <i class="ph-bold ph-plus"></i>
+                </button>
+            </div>
+            <button onclick="app.switchTab('report')" class="nav-btn flex-1 flex flex-col items-center justify-center gap-1 text-gray-400 hover:text-primary transition" data-tab="report">
+                <i class="ph-fill ph-chart-pie text-[20px] transition-transform"></i><span class="text-[9px] font-bold tracking-wide">Report</span>
+            </button>
+            <button onclick="app.switchTab('settings')" class="nav-btn flex-1 flex flex-col items-center justify-center gap-1 text-gray-400 hover:text-primary transition" data-tab="settings">
+                <i class="ph-fill ph-gear text-[20px] transition-transform"></i><span class="text-[9px] font-bold tracking-wide">Settings</span>
+            </button>
+        </nav>
+
+        <!-- Dynamic Modals / Toasts Container -->
+        <div id="toast" class="absolute top-4 left-1/2 transform -translate-x-1/2 bg-primary text-white px-5 py-2.5 rounded-full shadow-2xl z-[100] text-xs font-bold transition-all duration-300 opacity-0 -translate-y-10 flex items-center gap-2 whitespace-nowrap border border-white/10 pointer-events-none">
+            <i class="ph-fill ph-info"></i><span id="toastMsg">Notifikasi</span>
+        </div>
+        
+        <!-- ====== MODAL: KATEGORI ====== -->
+        <div id="categoryModal" class="absolute inset-0 z-[100] bg-black/40 backdrop-blur-sm hidden flex-col justify-end">
+            <div class="bg-white w-full h-[90%] rounded-t-[30px] shadow-2xl flex flex-col pt-2 animate-fade-in">
+                <div class="w-12 h-1.5 bg-gray-300 rounded-full mx-auto mb-4 shrink-0"></div>
+                
+                <div class="px-5 flex justify-between items-center mb-6 shrink-0">
+                    <h2 class="font-bold text-lg text-primary font-heading">Kelola Kategori</h2>
+                    <button onclick="document.getElementById('categoryModal').classList.add('hidden')" class="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full text-gray-500 active:scale-95 transition">
+                        <i class="ph-bold ph-x"></i>
+                    </button>
+                </div>
+
+                <div class="px-5 flex-1 overflow-y-auto space-y-5 pb-24 no-scrollbar">
+                    <input type="hidden" id="editCatId">
+                    
+                    <div>
+                        <label class="text-[10px] font-bold text-gray-400 uppercase">Nama Kategori</label>
+                        <input type="text" id="editCatName" placeholder="Ketik disini..." class="w-full text-xl font-heading font-bold text-primary border-b-2 border-gray-200 py-2 outline-none focus:border-secondary transition bg-transparent" autocomplete="off">
+                    </div>
+                    
+                    <div>
+                        <label class="text-[10px] font-bold text-gray-400 uppercase block mb-2">Tipe</label>
+                        <div class="grid grid-cols-2 gap-2">
+                            <label class="relative flex px-3 py-2 border rounded-xl items-center gap-2 cursor-pointer has-[:checked]:border-danger has-[:checked]:bg-danger/5 transition">
+                                <input type="radio" name="editCatType" value="Expense" class="peer sr-only" checked>
+                                <i class="ph-fill ph-arrow-up-right text-danger"></i>
+                                <span class="font-bold text-xs border-transparent peer-checked:text-danger">Pengeluaran</span>
+                            </label>
+                            <label class="relative flex px-3 py-2 border rounded-xl items-center gap-2 cursor-pointer has-[:checked]:border-success has-[:checked]:bg-success/5 transition">
+                                <input type="radio" name="editCatType" value="Income" class="peer sr-only">
+                                <i class="ph-fill ph-arrow-down-left text-success"></i>
+                                <span class="font-bold text-xs border-transparent peer-checked:text-success">Pemasukan</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="text-[10px] font-bold text-gray-400 uppercase block mb-2">Nature (Prioritas Pengeluaran)</label>
+                        <input type="hidden" id="editCatNature" value="wants">
+                        <div class="grid grid-cols-3 gap-2">
+                            <button type="button" data-nature-pill="must" onclick="document.getElementById('editCatNature').value='must'; document.querySelectorAll('[data-nature-pill]').forEach(p=>{p.classList.toggle('ring-2',p.dataset.naturePill==='must');p.classList.toggle('opacity-100',p.dataset.naturePill==='must');p.classList.toggle('opacity-40',p.dataset.naturePill!=='must');})"
+                                class="flex flex-col items-center gap-1 py-2.5 px-1 rounded-xl border-2 border-red-200 bg-red-50 ring-red-400 ring-offset-1 opacity-40 transition">
+                                <i class="ph-fill ph-lock-key text-red-500 text-lg"></i>
+                                <span class="text-[10px] font-bold text-red-600">Must</span>
+                                <span class="text-[9px] text-red-400">Wajib</span>
+                            </button>
+                            <button type="button" data-nature-pill="needs" onclick="document.getElementById('editCatNature').value='needs'; document.querySelectorAll('[data-nature-pill]').forEach(p=>{p.classList.toggle('ring-2',p.dataset.naturePill==='needs');p.classList.toggle('opacity-100',p.dataset.naturePill==='needs');p.classList.toggle('opacity-40',p.dataset.naturePill!=='needs');})"
+                                class="flex flex-col items-center gap-1 py-2.5 px-1 rounded-xl border-2 border-yellow-200 bg-yellow-50 ring-yellow-400 ring-offset-1 opacity-40 transition">
+                                <i class="ph-fill ph-check text-yellow-600 text-lg"></i>
+                                <span class="text-[10px] font-bold text-yellow-700">Needs</span>
+                                <span class="text-[9px] text-yellow-500">Penting</span>
+                            </button>
+                            <button type="button" data-nature-pill="wants" onclick="document.getElementById('editCatNature').value='wants'; document.querySelectorAll('[data-nature-pill]').forEach(p=>{p.classList.toggle('ring-2',p.dataset.naturePill==='wants');p.classList.toggle('opacity-100',p.dataset.naturePill==='wants');p.classList.toggle('opacity-40',p.dataset.naturePill!=='wants');})"
+                                class="flex flex-col items-center gap-1 py-2.5 px-1 rounded-xl border-2 border-purple-200 bg-purple-50 ring-purple-400 ring-offset-1 opacity-100 ring-2 transition">
+                                <i class="ph-fill ph-sparkle text-purple-500 text-lg"></i>
+                                <span class="text-[10px] font-bold text-purple-600">Wants</span>
+                                <span class="text-[9px] text-purple-400">Keinginan</span>
+                            </button>
+                        </div>
+                        <p class="text-[10px] text-gray-400 mt-1.5">Hanya untuk kategori Pengeluaran. Income tidak perlu.</p>
+                    </div>
+
+                    <label class="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 cursor-pointer">
+                        <div class="flex items-center gap-2.5">
+                            <i class="ph-fill ph-tag-simple text-amber-500 text-lg"></i>
+                            <div>
+                                <p class="text-sm font-bold text-primary">Exclude dari Budget</p>
+                                <p class="text-[10px] text-amber-600">Transaksi kategori ini tidak dihitung di budget (misal: Sedekah, Gift)</p>
+                            </div>
+                        </div>
+                        <input type="checkbox" id="editCatExcludeBudget" class="accent-amber-500 w-4 h-4 shrink-0">
+                    </label>
+
+                    <div>
+                        <label class="text-[10px] font-bold text-gray-400 uppercase block mb-2">Ikon</label>
+                        <div id="editCatIconGrid" class="grid grid-cols-6 gap-2"></div>
+                        <input type="hidden" id="editCatIcon">
+                    </div>
+
+                    <div>
+                        <label class="text-[10px] font-bold text-gray-400 uppercase block mb-2">Warna</label>
+                        <div id="editCatColorGrid" class="flex flex-wrap gap-3"></div>
+                        <input type="hidden" id="editCatColor">
+                    </div>
+
+                    <div class="flex gap-2 pt-4">
+                        <button onclick="app.saveCategory()" class="flex-1 bg-secondary text-primary font-bold py-3 rounded-xl shadow-sm active:scale-95 transition">SIMPAN</button>
+                        <button id="btnDeleteCat" onclick="app.deleteCategory()" class="px-4 bg-danger/10 text-danger font-bold rounded-xl hidden active:scale-95 transition"><i class="ph-bold ph-trash"></i></button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ====== MODAL: EDIT TRANSACTION ====== -->
+
+        <!-- ====== MODAL: DELETE CONFIRM ====== -->
+        <div id="deleteConfirmModal" class="absolute inset-0 z-[200] bg-black/50 backdrop-blur-sm hidden flex items-center justify-center p-6">
+            <div class="bg-white rounded-3xl shadow-2xl w-full max-w-xs p-6 animate-fade-in">
+                <div class="w-12 h-12 rounded-2xl bg-danger/10 text-danger flex items-center justify-center mx-auto mb-4">
+                    <i class="ph-bold ph-trash text-2xl"></i>
+                </div>
+                <h3 class="font-bold text-primary text-center text-base font-heading mb-1">Hapus Transaksi?</h3>
+                <p class="text-xs text-gray-400 text-center mb-6">Transaksi ini akan dihapus permanen dan tidak bisa dikembalikan.</p>
+                <div class="flex gap-3">
+                    <button onclick="app.cancelDeleteTx()" class="flex-1 py-3 rounded-2xl bg-gray-100 text-primary text-sm font-bold active:scale-95 transition">Batal</button>
+                    <button onclick="app.confirmDeleteTx()" class="flex-1 py-3 rounded-2xl bg-danger text-white text-sm font-bold active:scale-95 transition">Hapus</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ====== MODAL: RECURRING CONFIRM ====== -->
+        <!-- Day Detail Modal -->
+        <div id="dayDetailModal" class="absolute inset-0 z-[200] bg-black/50 backdrop-blur-sm hidden items-end justify-center" onclick="if(event.target===this)app.closeDayDetail()">
+            <div class="bg-white w-full rounded-t-[28px] shadow-2xl animate-fade-in max-h-[80vh] flex flex-col">
+                <div class="w-12 h-1.5 bg-gray-300 rounded-full mx-auto mt-3 mb-1 shrink-0"></div>
+                <!-- Header card -->
+                <div class="mx-5 mt-3 mb-4 bg-orange-50 rounded-2xl p-4 relative shrink-0">
+                    <span id="dayDetailDate" class="absolute top-3 right-4 text-4xl font-black text-orange-200 leading-none select-none"></span>
+                    <p id="dayDetailDateLabel" class="text-[10px] font-bold text-orange-400 uppercase tracking-wider mb-3"></p>
+                    <div class="grid grid-cols-3 gap-2">
+                        <div>
+                            <p class="text-[9px] text-gray-400 font-bold uppercase tracking-wider mb-0.5">Income</p>
+                            <p id="dayDetailInc" class="text-sm font-extrabold text-emerald-500 leading-tight"></p>
+                        </div>
+                        <div>
+                            <p class="text-[9px] text-gray-400 font-bold uppercase tracking-wider mb-0.5">Keluar</p>
+                            <p id="dayDetailExp" class="text-sm font-extrabold text-red-500 leading-tight"></p>
+                        </div>
+                        <div>
+                            <p class="text-[9px] text-gray-400 font-bold uppercase tracking-wider mb-0.5">Balance</p>
+                            <p id="dayDetailBal" class="text-sm font-extrabold leading-tight"></p>
+                        </div>
+                    </div>
+                </div>
+                <!-- Transaction list -->
+                <div class="px-5 pb-8 overflow-y-auto no-scrollbar">
+                    <p class="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Transaksi</p>
+                    <div id="dayDetailTxList"></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="recurringConfirmModal" class="absolute inset-0 z-[200] bg-black/50 backdrop-blur-sm hidden flex items-center justify-center p-6">
+            <div class="bg-white rounded-3xl shadow-2xl w-full max-w-xs p-6 animate-fade-in">
+                <div id="rcModalIconWrapper" class="w-12 h-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mx-auto mb-4">
+                    <i id="rcModalIcon" class="ph-bold ph-question text-2xl"></i>
+                </div>
+                <h3 id="rcModalTitle" class="font-bold text-primary text-center text-base font-heading mb-1">Konfirmasi</h3>
+                <p id="rcModalDesc" class="text-xs text-gray-400 text-center mb-6">Apakah Anda yakin?</p>
+                <div class="flex gap-3">
+                    <button onclick="app.closeRecurringConfirm()" class="flex-1 py-3 rounded-2xl bg-gray-100 text-primary text-sm font-bold active:scale-95 transition">Batal</button>
+                    <button id="rcModalConfirmBtn" class="flex-1 py-3 rounded-2xl bg-primary text-white text-sm font-bold active:scale-95 transition">Ya</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ====== SHEET: KELOLA AKUN ====== -->
+        <div id="settingsAccountsSheet" class="absolute inset-0 z-[95] bg-black/40 backdrop-blur-sm hidden flex-col justify-end" onclick="if(event.target===this)app.closeSettingsSheet('settingsAccountsSheet')">
+            <div class="bg-white w-full rounded-t-[30px] shadow-2xl flex flex-col pt-2 animate-fade-in max-h-[85vh]">
+                <div class="w-12 h-1.5 bg-gray-300 rounded-full mx-auto mb-3 shrink-0"></div>
+                <div class="px-5 flex justify-between items-center mb-4 shrink-0">
+                    <h2 class="font-bold text-lg text-primary font-heading">Kelola Akun</h2>
+                    <div class="flex items-center gap-2">
+                        <button onclick="app.openAccountModal()" class="text-[10px] font-bold bg-secondary/10 text-secondary px-3 py-1.5 rounded-full flex items-center gap-1 active:scale-95 transition"><i class="ph-bold ph-plus text-xs"></i> Tambah</button>
+                        <button onclick="app.closeSettingsSheet('settingsAccountsSheet')" class="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full text-gray-500 active:scale-95 transition"><i class="ph-bold ph-x text-sm"></i></button>
+                    </div>
+                </div>
+                <div class="px-5 pb-10 overflow-y-auto no-scrollbar flex-1">
+                    <div id="settingsAccountsList" class="space-y-1"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ====== SHEET: KELOLA KATEGORI ====== -->
+        <div id="settingsCategoriesSheet" class="absolute inset-0 z-[95] bg-black/40 backdrop-blur-sm hidden flex-col justify-end" onclick="if(event.target===this)app.closeSettingsSheet('settingsCategoriesSheet')">
+            <div class="bg-white w-full rounded-t-[30px] shadow-2xl flex flex-col pt-2 animate-fade-in max-h-[85vh]">
+                <div class="w-12 h-1.5 bg-gray-300 rounded-full mx-auto mb-3 shrink-0"></div>
+                <div class="px-5 flex justify-between items-center mb-4 shrink-0">
+                    <h2 class="font-bold text-lg text-primary font-heading">Kelola Kategori</h2>
+                    <div class="flex items-center gap-2">
+                        <button onclick="app.openCategoryModal()" class="text-[10px] font-bold bg-secondary/10 text-secondary px-3 py-1.5 rounded-full flex items-center gap-1 active:scale-95 transition"><i class="ph-bold ph-plus text-xs"></i> Tambah</button>
+                        <button onclick="app.closeSettingsSheet('settingsCategoriesSheet')" class="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full text-gray-500 active:scale-95 transition"><i class="ph-bold ph-x text-sm"></i></button>
+                    </div>
+                </div>
+                <div class="px-5 pb-10 overflow-y-auto no-scrollbar flex-1">
+                    <div id="settingsCategoriesList" class="space-y-0"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ====== SHEET: TAMPILAN DASHBOARD ====== -->
+        <div id="settingsDashboardSheet" class="absolute inset-0 z-[95] bg-black/40 backdrop-blur-sm hidden flex-col justify-end" onclick="if(event.target===this)app.closeSettingsSheet('settingsDashboardSheet')">
+            <div class="bg-white w-full rounded-t-[30px] shadow-2xl flex flex-col pt-2 animate-fade-in max-h-[85vh]">
+                <div class="w-12 h-1.5 bg-gray-300 rounded-full mx-auto mb-3 shrink-0"></div>
+                <div class="px-5 flex justify-between items-center mb-2 shrink-0">
+                    <div>
+                        <h2 class="font-bold text-lg text-primary font-heading">Tampilan Dashboard</h2>
+                        <p class="text-xs text-gray-400">Atur visibilitas & urutan card Home</p>
+                    </div>
+                    <button onclick="app.closeSettingsSheet('settingsDashboardSheet')" class="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full text-gray-500 active:scale-95 transition"><i class="ph-bold ph-x text-sm"></i></button>
+                </div>
+                <div class="px-5 pb-10 pt-3 space-y-2 overflow-y-auto no-scrollbar" id="settingsCardsToggle">
+                    <!-- Dynamically rendered by app.renderDashboardSettings() -->
+                </div>
+            </div>
+        </div>
+
+        <!-- ====== SHEET: BUDGET BULANAN ====== -->
+        <div id="settingsProfileSheet" class="absolute inset-0 z-[95] bg-black/40 backdrop-blur-sm hidden flex-col justify-end" onclick="if(event.target===this)app.closeSettingsSheet('settingsProfileSheet')">
+            <div class="bg-white w-full rounded-t-[30px] shadow-2xl flex flex-col pt-2 animate-fade-in">
+                <div class="w-12 h-1.5 bg-gray-300 rounded-full mx-auto mb-3 shrink-0"></div>
+                <div class="px-5 flex justify-between items-center mb-2 shrink-0">
+                    <div>
+                        <h2 class="font-bold text-lg text-primary font-heading">Edit Profil</h2>
+                        <p class="text-xs text-gray-400">Ubah nama tampilan akun kamu</p>
+                    </div>
+                    <button onclick="app.closeSettingsSheet('settingsProfileSheet')" class="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full text-gray-500 active:scale-95 transition"><i class="ph-bold ph-x text-sm"></i></button>
+                </div>
+                <div class="px-5 pb-10 pt-3 space-y-4">
+                    <div class="bg-gray-50 rounded-2xl p-4 flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                            <i class="ph-fill ph-user text-primary text-lg"></i>
+                        </div>
+                        <input type="text" id="settingsNameInput" placeholder="Nama lengkap" maxlength="40"
+                            class="flex-1 bg-transparent border-0 text-base font-bold font-heading text-primary outline-none focus:outline-none placeholder:text-gray-300">
+                    </div>
+                    <p id="settingsProfileError" class="text-xs text-red-500 hidden text-center"></p>
+                    <button onclick="app.saveDisplayName()" id="saveNameBtn" class="w-full bg-primary text-white font-bold py-3.5 rounded-2xl shadow-sm active:scale-95 transition flex items-center justify-center gap-2">
+                        <i class="ph-fill ph-check-circle text-lg"></i>
+                        SIMPAN NAMA
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div id="settingsBudgetSheet" class="absolute inset-0 z-[95] bg-black/40 backdrop-blur-sm hidden flex-col justify-end" onclick="if(event.target===this)app.closeSettingsSheet('settingsBudgetSheet')">
+            <div class="bg-white w-full rounded-t-[30px] shadow-2xl flex flex-col pt-2 animate-fade-in">
+                <div class="w-12 h-1.5 bg-gray-300 rounded-full mx-auto mb-3 shrink-0"></div>
+                <div class="px-5 flex justify-between items-center mb-2 shrink-0">
+                    <div>
+                        <h2 class="font-bold text-lg text-primary font-heading">Budget Bulanan</h2>
+                        <p class="text-xs text-gray-400">Atur batas pengeluaran per bulan</p>
+                    </div>
+                    <button onclick="app.closeSettingsSheet('settingsBudgetSheet')" class="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full text-gray-500 active:scale-95 transition"><i class="ph-bold ph-x text-sm"></i></button>
+                </div>
+                <div class="px-5 pb-10 pt-3 space-y-4">
+                    <p class="text-[11px] text-gray-400 leading-relaxed">Pantau kesehatan keuangan dengan menetapkan target pengeluaran maksimal tiap bulan.</p>
+                    <div class="bg-gray-50 rounded-2xl p-4 flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl bg-success/10 flex items-center justify-center shrink-0">
+                            <i class="ph-fill ph-target text-success text-lg"></i>
+                        </div>
+                        <span class="text-sm font-bold text-gray-400 shrink-0">Rp</span>
+                        <input type="number" id="settingsBudgetInput" placeholder="3000000" class="flex-1 bg-transparent border-0 text-lg font-bold font-heading text-primary outline-none focus:outline-none">
+                    </div>
+                    <button onclick="app.saveBudget(); app.closeSettingsSheet('settingsBudgetSheet')" class="w-full bg-secondary text-primary font-bold py-3.5 rounded-2xl shadow-sm active:scale-95 transition flex items-center justify-center gap-2">
+                        <i class="ph-bold ph-check"></i> Simpan Budget
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ====== SHEET: IMPORT PREVIEW ====== -->
+        <div id="sheetImport" class="absolute inset-0 z-[110] bg-gray-50 hidden flex-col">
+            <div class="bg-white px-5 pt-6 pb-4 border-b border-gray-100 flex items-center justify-between sticky top-0 z-10 shadow-sm">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-2xl bg-success/10 flex items-center justify-center shrink-0">
+                        <i class="ph-fill ph-import text-success text-xl"></i>
+                    </div>
+                    <div>
+                        <h2 class="font-bold text-lg text-primary font-heading leading-tight">Import Data</h2>
+                        <p class="text-[10px] text-gray-400 uppercase tracking-widest font-bold">Preview & Konfirmasi</p>
+                    </div>
+                </div>
+                <button onclick="app.closeImportSheet()" class="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center">
+                    <i class="ph-bold ph-x text-gray-500"></i>
+                </button>
+            </div>
+            <div class="flex-1 overflow-y-auto no-scrollbar p-4 space-y-3">
+                <!-- Summary card -->
+                <div id="importSummaryCard" class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3"></div>
+                <!-- Warning -->
+                <div id="importWarning" class="bg-yellow-50 border border-yellow-200 rounded-2xl p-4 hidden">
+                    <div class="flex gap-3 items-start">
+                        <i class="ph-fill ph-warning text-yellow-500 text-xl shrink-0 mt-0.5"></i>
+                        <div>
+                            <p class="text-xs font-bold text-yellow-800">Perhatian</p>
+                            <p class="text-xs text-yellow-700 mt-1" id="importWarningText"></p>
+                        </div>
+                    </div>
+                </div>
+                <!-- Mode selection -->
+                <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+                    <p class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Mode Import</p>
+                    <div class="space-y-2">
+                        <label class="flex items-start gap-3 cursor-pointer p-3 rounded-xl border-2 border-secondary bg-secondary/5">
+                            <input type="radio" name="importMode" value="merge" checked class="mt-0.5 accent-secondary shrink-0">
+                            <div>
+                                <p class="text-sm font-bold text-primary">Merge (Gabung)</p>
+                                <p class="text-xs text-gray-400 mt-0.5">Tambahkan data baru, lewati transaksi yang sudah ada (aman)</p>
+                            </div>
+                        </label>
+                        <label class="flex items-start gap-3 cursor-pointer p-3 rounded-xl border-2 border-transparent hover:border-gray-200">
+                            <input type="radio" name="importMode" value="replace" class="mt-0.5 accent-danger shrink-0">
+                            <div>
+                                <p class="text-sm font-bold text-danger">Replace (Timpa)</p>
+                                <p class="text-xs text-gray-400 mt-0.5">⚠️ Hapus semua data lama lalu ganti dengan data dari file. Tidak bisa dibatalkan!</p>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <!-- Footer -->
+            <div class="bg-white border-t border-gray-100 p-4">
+                <p id="importProgressText" class="text-xs text-center text-gray-400 mb-3 hidden"></p>
+                <button id="importConfirmBtn" onclick="app.confirmImport()" class="w-full bg-success text-white font-bold py-4 rounded-2xl text-sm hover:bg-green-600 transition active:scale-[0.98] flex items-center justify-center gap-2">
+                    <i class="ph-fill ph-check-circle text-lg"></i>
+                    Konfirmasi Import
+                </button>
+            </div>
+        </div>
+
+        <!-- ====== SHEET: RECURRING TRANSACTIONS LIST ====== -->
+        <div id="sheetRecurring" class="absolute inset-0 z-[100] bg-gray-50 hidden flex-col">
+            <!-- Header -->
+            <div class="bg-white px-5 pt-6 pb-4 border-b border-gray-100 flex items-center justify-between sticky top-0 z-10 shadow-sm">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-2xl bg-primary/10 flex items-center justify-center text-primary shrink-0">
+                        <i class="ph-fill ph-repeat text-xl"></i>
+                    </div>
+                    <div>
+                        <h2 class="font-bold text-lg text-primary font-heading leading-tight">Recurring</h2>
+                        <p class="text-[10px] text-gray-400 uppercase tracking-widest font-bold">Langganan & Cicilan</p>
+                    </div>
+                </div>
+                <button onclick="app.closeRecurringSheet()" class="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full text-gray-500 hover:bg-gray-200 transition"><i class="ph-bold ph-x text-sm"></i></button>
+            </div>
+            <!-- List Content -->
+            <div class="flex-1 overflow-y-auto no-scrollbar p-5 space-y-3 relative" id="recurringListContent">
+                <!-- Injected via JS -->
+            </div>
+            <!-- FAB Add -->
+            <div class="absolute bottom-6 right-6 z-20">
+                <button onclick="app.openAddRecurringSheet()" class="w-14 h-14 rounded-full bg-secondary text-primary flex items-center justify-center shadow-lg shadow-secondary/30 active:scale-95 transition">
+                    <i class="ph-bold ph-plus text-xl"></i>
+                </button>
+            </div>
+        </div>
+
+
+        <!-- ====== SHEET: TANGGAL GAJIAN ====== -->
+        <div id="settingsPaydaySheet" class="absolute inset-0 z-[95] bg-black/40 backdrop-blur-sm hidden flex-col justify-end" onclick="if(event.target===this)app.closeSettingsSheet('settingsPaydaySheet')">
+            <div class="bg-white w-full rounded-t-[30px] shadow-2xl flex flex-col pt-2 animate-fade-in">
+                <div class="w-12 h-1.5 bg-gray-300 rounded-full mx-auto mb-3 shrink-0"></div>
+                <div class="px-5 flex justify-between items-center mb-2 shrink-0">
+                    <div>
+                        <h2 class="font-bold text-lg text-primary font-heading">Tanggal Gajian</h2>
+                        <p class="text-xs text-gray-400">Atur tanggal penerimaan gaji</p>
+                    </div>
+                    <button onclick="app.closeSettingsSheet('settingsPaydaySheet')" class="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full text-gray-500 active:scale-95 transition"><i class="ph-bold ph-x text-sm"></i></button>
+                </div>
+                <div class="px-5 pb-10 pt-3 space-y-4">
+                    <p class="text-[11px] text-gray-400 leading-relaxed">Payday Countdown akan menyesuaikan dengan tanggal yang Anda pilih.</p>
+                    <div class="bg-gray-50 rounded-2xl p-4 flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl bg-indigo-500/10 flex items-center justify-center shrink-0">
+                            <i class="ph-fill ph-calendar-check text-indigo-500 text-lg"></i>
+                        </div>
+                        <input type="number" id="settingsPaydayInput" placeholder="25" min="1" max="31" class="flex-1 bg-transparent border-0 text-lg font-bold font-heading text-primary outline-none focus:outline-none">
+                    </div>
+                    <button onclick="app.savePayday(); app.closeSettingsSheet('settingsPaydaySheet')" class="w-full bg-secondary text-primary font-bold py-3.5 rounded-2xl shadow-sm active:scale-95 transition flex items-center justify-center gap-2">
+                        <i class="ph-bold ph-check"></i> Simpan Tanggal Gajian
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ====== SHEET: AI ASSISTANT ====== -->
+        <div id="settingsAISheet" class="absolute inset-0 z-[95] bg-black/40 backdrop-blur-sm hidden flex-col justify-end" onclick="if(event.target===this)app.closeSettingsSheet('settingsAISheet')">
+            <div class="bg-white w-full rounded-t-[30px] shadow-2xl flex flex-col pt-2 animate-fade-in">
+                <div class="w-12 h-1.5 bg-gray-300 rounded-full mx-auto mb-3 shrink-0"></div>
+                <div class="px-5 flex justify-between items-center mb-2 shrink-0">
+                    <div>
+                        <h2 class="font-bold text-lg text-primary font-heading">AI Assistant</h2>
+                        <p class="text-xs text-gray-400">Gemini API untuk parser & chat cerdas</p>
+                    </div>
+                    <button onclick="app.closeSettingsSheet('settingsAISheet')" class="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full text-gray-500 active:scale-95 transition"><i class="ph-bold ph-x text-sm"></i></button>
+                </div>
+                <div class="px-5 pb-10 pt-3 space-y-4">
+                    <div class="bg-purple-50 rounded-2xl p-4 flex gap-3">
+                        <i class="ph-fill ph-info text-purple-400 text-lg shrink-0 mt-0.5"></i>
+                        <p class="text-[11px] text-purple-600 leading-relaxed">Dapatkan API Key gratis di <b>Google AI Studio</b> (aistudio.google.com). Aktifkan parser AI & tanya-jawab Gen-Z di chat.</p>
+                    </div>
+                    <div class="bg-gray-50 rounded-2xl p-4 flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl bg-purple-500/10 flex items-center justify-center shrink-0">
+                            <i class="ph-fill ph-key text-purple-500 text-lg"></i>
+                        </div>
+                        <input type="password" id="geminiApiKey" placeholder="AIzaSy..." class="flex-1 bg-transparent border-0 text-sm font-mono text-primary outline-none placeholder-gray-300">
+                    </div>
+                    <button onclick="app.saveApiKey(); app.closeSettingsSheet('settingsAISheet')" class="w-full bg-purple-500 text-white font-bold py-3.5 rounded-2xl shadow-sm active:scale-95 transition flex items-center justify-center gap-2">
+                        <i class="ph-bold ph-check"></i> Simpan API Key
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ====== MODAL: INCONSISTENCY CHECK ====== -->
+        <div id="inconsistencyModal" class="absolute inset-0 z-[200] bg-black/50 backdrop-blur-sm hidden items-center justify-center p-6">
+            <div class="bg-white rounded-3xl shadow-2xl w-full max-w-xs p-6 animate-fade-in">
+                <div class="w-12 h-12 rounded-2xl bg-yellow-100 text-yellow-500 flex items-center justify-center mx-auto mb-4">
+                    <i class="ph-bold ph-question text-2xl"></i>
+                </div>
+                <h3 class="font-bold text-primary text-center text-base font-heading mb-1">Kemarin Kemana?</h3>
+                <p id="inconsistencyDate" class="text-xs text-secondary font-bold text-center mb-2">Senin, 1 Januari</p>
+                <p class="text-xs text-gray-400 text-center mb-6 leading-relaxed">Kemarin lo nggak input transaksi sama sekali. Lupa input, atau emang hari hemat?</p>
+                <div class="flex gap-3">
+                    <button onclick="app.markYesterdayNoSpend()" class="flex-1 py-3 rounded-2xl bg-success/10 text-success text-sm font-bold active:scale-95 transition flex items-center justify-center gap-1">
+                        <i class="ph-fill ph-leaf"></i> Gue Hemat!
+                    </button>
+                    <button onclick="app.closeInconsistencyModal(); app.switchTab('input')" class="flex-1 py-3 rounded-2xl bg-secondary text-primary text-sm font-bold active:scale-95 transition flex items-center justify-center gap-1">
+                        <i class="ph-fill ph-pencil-simple"></i> Input Dulu
+                    </button>
+                </div>
+                <button onclick="app.closeInconsistencyModal()" class="w-full mt-2 py-2 text-xs text-gray-400 font-bold active:scale-95 transition">Lewati</button>
+            </div>
+        </div>
+
+        <!-- ====== MODAL: ACCOUNT ====== -->
+        <div id="accountModal" class="absolute inset-0 z-[110] bg-black/40 backdrop-blur-sm hidden flex-col justify-end">
+            <div class="bg-white w-full rounded-t-[30px] shadow-2xl flex flex-col pt-2 animate-fade-in">
+                <div class="w-12 h-1.5 bg-gray-300 rounded-full mx-auto mb-4 shrink-0"></div>
+                <div class="px-5 flex justify-between items-center mb-4 shrink-0">
+                    <h2 class="font-bold text-lg text-primary font-heading">Kelola Akun</h2>
+                    <button onclick="app.closeAccountModal()" class="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full text-gray-500 active:scale-95 transition"><i class="ph-bold ph-x"></i></button>
+                </div>
+                <div class="px-5 pb-10 space-y-4 overflow-y-auto no-scrollbar max-h-[80vh]">
+                    <input type="hidden" id="editAccId">
+                    <div>
+                        <label class="text-[10px] font-bold text-gray-400 uppercase block mb-1">Nama Akun</label>
+                        <input type="text" id="editAccName" placeholder="Ketik nama..." class="w-full text-xl font-heading font-bold text-primary border-b-2 border-gray-200 py-2 outline-none focus:border-secondary transition bg-transparent" autocomplete="off">
+                    </div>
+                    <div>
+                        <label class="text-[10px] font-bold text-gray-400 uppercase block mb-1 flex justify-between">
+                            <span>Total Saldo</span>
+                            <span class="text-[9px] text-amber-500 font-normal normal-case">Perubahan akan dicatat sebagai Adjustment</span>
+                        </label>
+                        <div class="relative">
+                            <span class="absolute left-0 top-1/2 -translate-y-1/2 text-xl font-bold text-gray-400">Rp</span>
+                            <input type="number" id="editAccBalance" placeholder="0" class="w-full text-xl font-heading font-bold text-primary border-b-2 border-gray-200 py-2 pl-8 outline-none focus:border-secondary transition bg-transparent" autocomplete="off">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="text-[10px] font-bold text-gray-400 uppercase block mb-2">Tipe</label>
+                        <div class="grid grid-cols-3 gap-2">
+                            <label class="relative flex flex-col items-center bg-gray-50 border-2 p-3 rounded-xl cursor-pointer has-[:checked]:border-secondary has-[:checked]:bg-secondary/5 transition">
+                                <input type="radio" name="editAccType" value="Cash" class="peer sr-only" checked>
+                                <i class="ph-fill ph-money text-xl mb-1 text-gray-400"></i>
+                                <span class="font-bold text-xs text-gray-500">Cash</span>
+                            </label>
+                            <label class="relative flex flex-col items-center bg-gray-50 border-2 p-3 rounded-xl cursor-pointer has-[:checked]:border-secondary has-[:checked]:bg-secondary/5 transition">
+                                <input type="radio" name="editAccType" value="E-Wallet" class="peer sr-only">
+                                <i class="ph-fill ph-device-mobile text-xl mb-1 text-gray-400"></i>
+                                <span class="font-bold text-xs text-gray-500">E-Wallet</span>
+                            </label>
+                            <label class="relative flex flex-col items-center bg-gray-50 border-2 p-3 rounded-xl cursor-pointer has-[:checked]:border-secondary has-[:checked]:bg-secondary/5 transition">
+                                <input type="radio" name="editAccType" value="Bank" class="peer sr-only">
+                                <i class="ph-fill ph-bank text-xl mb-1 text-gray-400"></i>
+                                <span class="font-bold text-xs text-gray-500">Bank</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="text-[10px] font-bold text-gray-400 uppercase block mb-2">Purpose / Fungsi Akun</label>
+                        <input type="hidden" id="editAccPurpose" value="daily">
+                        <div class="grid grid-cols-3 gap-2">
+                            <button type="button" data-purpose-btn="daily" onclick="document.getElementById('editAccPurpose').value='daily'; document.querySelectorAll('[data-purpose-btn]').forEach(b=>{const a=b.dataset.purposeBtn==='daily';b.classList.toggle('bg-secondary',a);b.classList.toggle('text-primary',a);b.classList.toggle('font-bold',a);b.classList.toggle('bg-gray-100',!a);b.classList.toggle('text-gray-500',!a);})"
+                                class="flex flex-col items-center gap-1 py-2.5 px-1 rounded-xl text-xs bg-secondary text-primary font-bold transition">
+                                <i class="ph-fill ph-wallet text-base"></i>
+                                <span>Harian</span>
+                            </button>
+                            <button type="button" data-purpose-btn="emergency_fund" onclick="document.getElementById('editAccPurpose').value='emergency_fund'; document.querySelectorAll('[data-purpose-btn]').forEach(b=>{const a=b.dataset.purposeBtn==='emergency_fund';b.classList.toggle('bg-secondary',a);b.classList.toggle('text-primary',a);b.classList.toggle('font-bold',a);b.classList.toggle('bg-gray-100',!a);b.classList.toggle('text-gray-500',!a);})"
+                                class="flex flex-col items-center gap-1 py-2.5 px-1 rounded-xl text-xs bg-gray-100 text-gray-500 transition">
+                                <i class="ph-fill ph-shield-check text-base"></i>
+                                <span>Dana Darurat</span>
+                            </button>
+                            <button type="button" data-purpose-btn="investment" onclick="document.getElementById('editAccPurpose').value='investment'; document.querySelectorAll('[data-purpose-btn]').forEach(b=>{const a=b.dataset.purposeBtn==='investment';b.classList.toggle('bg-secondary',a);b.classList.toggle('text-primary',a);b.classList.toggle('font-bold',a);b.classList.toggle('bg-gray-100',!a);b.classList.toggle('text-gray-500',!a);})"
+                                class="flex flex-col items-center gap-1 py-2.5 px-1 rounded-xl text-xs bg-gray-100 text-gray-500 transition">
+                                <i class="ph-fill ph-chart-line-up text-base"></i>
+                                <span>Investasi</span>
+                            </button>
+                        </div>
+                    </div>
+                    <label class="flex items-center justify-between bg-gray-50 rounded-2xl px-4 py-3.5 cursor-pointer">
+                        <div class="flex items-center gap-3">
+                            <div class="w-9 h-9 rounded-xl bg-success/10 text-success flex items-center justify-center shrink-0">
+                                <i class="ph-fill ph-eye-slash text-base"></i>
+                            </div>
+                            <div>
+                                <p class="text-sm font-bold text-primary">Exclude dari Budget</p>
+                                <p class="text-[10px] text-gray-400">Tidak dihitung dalam tracking pengeluaran</p>
+                            </div>
+                        </div>
+                        <input type="checkbox" id="editAccExclude" class="accent-secondary w-4 h-4 shrink-0">
+                    </label>
+                    <div>
+                        <label class="text-[10px] font-bold text-gray-400 uppercase block mb-2">Ikon</label>
+                        <div id="editAccIconGrid" class="grid grid-cols-6 gap-2"></div>
+                        <input type="hidden" id="editAccIcon">
+                    </div>
+                    <div>
+                        <label class="text-[10px] font-bold text-gray-400 uppercase block mb-2">Warna</label>
+                        <div id="editAccColorGrid" class="flex flex-wrap gap-3"></div>
+                        <input type="hidden" id="editAccColor">
+                    </div>
+                    <div class="flex gap-2 pt-2 pb-4">
+                        <button onclick="app.saveAccount()" class="flex-1 bg-secondary text-primary font-bold py-3 rounded-xl shadow-sm active:scale-95 transition">SIMPAN</button>
+                        <button id="btnDeleteAcc" onclick="app.deleteAccount()" class="px-4 bg-danger/10 text-danger font-bold rounded-xl hidden active:scale-95 transition"><i class="ph-bold ph-trash text-lg"></i></button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ====== GLOBAL: Category Popup ====== -->
+        <div id="categoryPopup" class="hidden fixed inset-0 z-[999] bg-black/30 flex items-end" onclick="if(event.target===this)app.closeCategoryPopup()">
+            <div class="bg-white w-full rounded-t-3xl p-5 pb-8 max-h-[70%] flex flex-col">
+                <div class="flex items-center justify-between mb-4 shrink-0">
+                    <h3 class="font-bold text-primary font-heading">Pilih Kategori</h3>
+                    <button onclick="app.closeCategoryPopup()" class="w-8 h-8 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center">
+                        <i class="ph-bold ph-x text-sm"></i>
+                    </button>
+                </div>
+                <div id="formCategoryGrid" class="grid grid-cols-4 gap-2 overflow-y-auto no-scrollbar"></div>
+            </div>
+        </div>
+
+        <!-- ====== GLOBAL: Account Popup ====== -->
+        <div id="accountPopup" class="hidden fixed inset-0 z-[999] bg-black/30 flex items-end" onclick="if(event.target===this)app.closeAccountPopup()">
+            <div class="bg-white w-full rounded-t-3xl p-5 pb-8 max-h-[70%] flex flex-col">
+                <div class="flex items-center justify-between mb-4 shrink-0">
+                    <h3 class="font-bold text-primary font-heading">Pilih Akun</h3>
+                    <button onclick="app.closeAccountPopup()" class="w-8 h-8 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center">
+                        <i class="ph-bold ph-x text-sm"></i>
+                    </button>
+                </div>
+                <div id="formAccountGrid" class="grid grid-cols-4 gap-2 overflow-y-auto no-scrollbar"></div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- ==================== UPDATE MODAL ==================== -->
+    <div id="updateModal" class="fixed inset-0 z-[99999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 hidden">
+        <div class="bg-white rounded-3xl shadow-2xl max-w-sm w-full overflow-hidden animate-[fadeIn_0.3s_ease-out]">
+            <!-- Header with icon -->
+            <div class="bg-gradient-to-r from-primary to-blue-900 px-6 py-6 text-center">
+                <div class="w-16 h-16 mx-auto bg-secondary/20 rounded-2xl flex items-center justify-center mb-3">
+                    <i class="ph-fill ph-rocket text-secondary text-3xl"></i>
+                </div>
+                <h3 class="text-xl font-bold text-white font-heading">Update Diperlukan</h3>
+                <p class="text-white/70 text-xs mt-1">Versi aplikasi telah diperbarui</p>
+            </div>
+            <!-- Content -->
+            <div class="p-6 text-center">
+                <p class="text-sm text-gray-600 mb-4">
+                    Aplikasi Anda menggunakan versi yang sudah lama dan perlu diperbarui untuk melanjutkan.
+                </p>
+                <div class="bg-gray-50 rounded-xl p-4 mb-4">
+                    <p class="text-xs text-gray-400 mb-1">Versi saat ini</p>
+                    <p id="updateModalOldVersion" class="text-lg font-bold text-gray-500">-</p>
+                </div>
+                <div class="bg-green-50 rounded-xl p-4 mb-6">
+                    <p class="text-xs text-green-400 mb-1">Versi terbaru</p>
+                    <p id="updateModalNewVersion" class="text-lg font-bold text-green-600">-</p>
+                </div>
+                <p id="updateModalChangelog" class="text-xs text-gray-500 mb-6"></p>
+                <button onclick="updateManager.performUpdate()" class="w-full bg-secondary text-primary font-bold py-4 rounded-xl hover:bg-yellow-400 transition active:scale-[0.98] shadow-lg shadow-yellow-200/50">
+                    <i class="ph ph-rocket mr-2"></i>Update Sekarang
+                </button>
+                <p class="text-[10px] text-gray-400 mt-3">Aplikasi akan dimuat ulang secara otomatis</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== UPDATE NOTIFICATION UI ==================== -->
+    <!-- Update Banner (slides from top) -->
+    <div id="updateBanner" class="fixed top-0 left-0 right-0 z-[9999] transform -translate-y-full transition-transform duration-500 ease-out pointer-events-none">
+        <div class="max-w-[480px] mx-auto">
+            <div class="bg-gradient-to-r from-primary to-blue-900 text-white px-4 py-3 rounded-b-2xl shadow-2xl border border-white/10">
+                <!-- Progress bar -->
+                <div class="h-1 bg-white/20 rounded-full mb-3 overflow-hidden">
+                    <div id="updateProgressBar" class="h-full bg-secondary rounded-full transition-all duration-1000 ease-out" style="width: 0%"></div>
+                </div>
+                <!-- Main content -->
+                <div class="flex items-center justify-between gap-3">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl bg-secondary/20 flex items-center justify-center shrink-0">
+                            <i class="ph-fill ph-rocket text-secondary text-xl"></i>
+                        </div>
+                        <div>
+                            <p class="text-sm font-bold">Update Tersedia!</p>
+                            <p id="updateBannerVersion" class="text-xs text-white/70">v5.1</p>
+                            <p id="updateBannerChangelog" class="text-[10px] text-white/50 mt-0.5"></p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button onclick="updateManager.skipVersion(_updatePending?.version)" id="updateBannerSkip" class="shrink-0 text-white/60 text-xs font-bold hover:text-white px-2 py-1">
+                            Lewati
+                        </button>
+                        <button onclick="updateManager.performUpdate()" id="updateBannerBtn" class="shrink-0 bg-secondary text-primary px-4 py-2 rounded-xl text-xs font-bold hover:bg-yellow-400 transition active:scale-95">
+                            <i class="ph ph-rocket mr-1"></i>Update Sekarang
+                        </button>
+                    </div>
+                </div>
+                <!-- Countdown text -->
+                <p id="updateProgressText" class="text-[10px] text-white/50 mt-2 text-center"></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Snackbar Container (bottom toast) -->
+    <div id="snackbarContainer" class="fixed bottom-24 left-4 right-4 z-[9999] flex flex-col items-center gap-2 pointer-events-none max-w-[480px] mx-auto">
+    </div>
+
+    <!-- ==================== JAVASCRIPT ==================== -->
+<script src="app.js?v=5.0.1"></script></body></html>

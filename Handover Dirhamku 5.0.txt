@@ -1,0 +1,169 @@
+# 📋 Handover Report — Dirhamku 5.0
+
+## Project Overview
+
+**Dirhamku** adalah aplikasi pencatat keuangan pribadi berbasis **Firebase Hosting + Firestore**, single-page app vanilla JS. Deployed di `https://dirhamku.web.app`.
+
+---
+
+## Tech Stack
+
+| Layer | Detail |
+|---|---|
+| Hosting | Firebase Hosting |
+| Database | Firestore (`users/{uid}` + `users/{uid}/transactions`) |
+| Frontend | Vanilla JS (`window.app` object), Tailwind CSS CDN, Phosphor Icons, Chart.js |
+| Auth | Firebase Auth (Email/Password + Google) |
+| AI | Gemini API (key disimpan di Firestore + localStorage) |
+
+---
+
+## File Structure
+
+```
+dirhamku-firebase/
+  public/
+    index.html    (631 baris)
+    app.js        (2085 baris)
+    sw.js
+    manifest.json
+  firebase.json
+  firestore.rules
+  functions/
+    index.js
+```
+
+---
+
+## State Variables (app.js global)
+
+```js
+currentUser          // Firebase Auth user
+currentProfile       // Firestore doc: { accounts[], monthlyBudget, categories[], geminiApiKey }
+accounts[]           // Array akun: { id, name, type, icon, color, balance }
+allTransactions[]    // Cache semua transaksi, diload via loadData()
+pendingChatTxs[]     // Transaksi pending dari AI chat
+selectedTxAccountFilter  // 'all' | account.id
+activeMonthDate      // Date object bulan yang sedang ditampilkan (month filter)
+txCarouselScrollTimer    // debounce timer untuk carousel scroll
+```
+
+---
+
+## Konstanta Penting
+
+```js
+AVAILABLE_ACC_ICONS[]   // 15 icon Phosphor untuk akun
+AVAILABLE_ACC_COLORS[]  // 12 warna untuk akun
+AVAILABLE_ICONS[]       // 20 icon Phosphor untuk kategori
+AVAILABLE_COLORS[]      // 12 warna untuk kategori
+DEFAULT_CATEGORIES[]    // 11 kategori default (id, name, type, icon, color)
+DEFAULT_MONTHLY_BUDGET  // 3000000
+```
+
+---
+
+## Fitur Yang Sudah Berjalan
+
+### ✅ Navigasi & Tab
+- Tab: Home, Transactions, Input (Chat/Form), Settings
+- Month navigation (panah kiri/kanan) di Home dan Transactions header
+- `activeMonthDate` mengontrol semua filter data per bulan
+
+### ✅ Home Tab
+- Kartu Income/Expense summary
+- **Card Performance** — gauge chart saving rate + breakdown kategori
+- **Card Budget Status** — progress bar, cumulative line chart (Spending aktual + garis Prediksi + garis Budget), saran pengeluaran harian = `sisa budget ÷ sisa hari`
+- **Card Top Spending** — layout 2 kolom: Top 3 transaksi terbesar (medal 🥇🥈🥉) + Top 4 kategori terbesar (bar progress berwarna per kategori)
+- Recent 5 transaksi
+
+### ✅ Transactions Tab (History)
+- Header: bulan navigator + tombol Recurring (placeholder) + Search
+- **Hero card carousel** full-width snap, 1 kartu per akun + 1 "All Portfolio"
+  - Warna monokromatik turunan dari warna akun masing-masing
+  - **Battery chart** 4 segmen kotak, fill graduated (misal 79% → 3 bar penuh + 1 bar 16% isi)
+  - Data: Balance, Health %, Income, Expense bulan ini
+- Dot indicator di bawah carousel
+- List transaksi dikelompokkan per tanggal, difilter by akun dan bulan aktif
+- **Tap transaksi → Modal Edit** (bottom sheet): edit tipe, nominal, akun, tanggal, kategori, catatan + delete
+
+### ✅ Input Tab
+- Mode Chat: AI Gemini parse teks bebas → konfirmasi transaksi
+- Mode Form: input manual dengan category grid (icon picker 4 kolom)
+
+### ✅ Settings Tab
+- Daftar akun + tombol ✏️ per akun → **Modal Edit Akun**: nama, tipe, icon grid, color grid
+- Tombol "+ Tambah" untuk akun baru
+- Daftar kategori + tombol ✏️ → **Modal Edit Kategori**
+- Gemini API key input
+
+---
+
+## Modal yang Ada di index.html
+
+| ID Modal | Fungsi | Tombol Trigger |
+|---|---|---|
+| `#editTxModal` | Edit/hapus transaksi | Tap row transaksi |
+| `#accountModal` | Edit/tambah akun | `openAccountModal(accId?)` |
+| `#categoryModal` | Edit/tambah kategori | `openCategoryModal(catId?)` |
+
+---
+
+## Fungsi JS Penting
+
+| Fungsi | Lokasi | Deskripsi |
+|---|---|---|
+| `init()` | ~line 200 | Bootstrap app setelah login |
+| `loadData()` | ~line 340 | Fetch semua transaksi, hitung balance dinamis |
+| `renderHome()` | ~line 392 | Render seluruh Home tab |
+| `buildStatusCard()` | ~line 470 | Chart budget status |
+| `buildPerformanceCard()` | ~line 694 | Gauge + kategori breakdown |
+| `renderTransactions()` | ~line 1098 | Render Transactions tab |
+| `renderTransactionAccountFilters()` | ~line 832 | Build hero card carousel |
+| `getTransactionMonthHealth()` | ~line 789 | Hitung income/expense/health% per akun per `activeMonthDate` |
+| `navigateMonth(delta)` | ~line 230 | Geser `activeMonthDate` ±1 bulan |
+| `updateMonthLabels()` | ~line 248 | Update label bulan di header Home + Tx |
+| `openEditTxModal(txId)` | ~line 1330 | Buka modal edit transaksi |
+| `saveEditTx()` | ~line 1345 | Simpan perubahan transaksi ke Firestore |
+| `openAccountModal(accId?)` | ~line 1375 | Buka modal edit/tambah akun |
+| `saveAccount()` | ~line 1415 | Simpan akun ke Firestore |
+| `renderCategoryGrid(containerId, selectedCat, hiddenInputId)` | ~line 1290 | Render grid icon kategori |
+
+---
+
+## Hal Yang Belum / Perlu Perhatian
+
+| Item | Status | Catatan |
+|---|---|---|
+| **Grey overlay hero card** saat tap | ⚠️ Masih ada di sebagian device | Kartu sudah `<div>` + `-webkit-tap-highlight-color:transparent` inline, tapi belum 100% hilang di semua browser |
+| **Swipe month** di Home | ✅ Stabil | Hanya tab-home, threshold `dx > dy × 1.8` |
+| **Carousel swipe** di Transactions | ✅ Native scroll | `touch-action:pan-x`, tidak konflik dengan month nav |
+| **`openRecurringModal()`** | ⚠️ Placeholder | Hanya toast "segera hadir" |
+| **Search button** di Transactions header | ⚠️ Belum fungsional | Tombol ada, onclick belum ada |
+| **`saveEditTx()`** untuk tipe Transfer | ⚠️ Belum handle | Form edit tidak tampilkan field from/to account untuk Transfer |
+| **`initProfile()`** account migration | ✅ Ada | Tambahkan `icon`/`color` default jika akun lama belum punya |
+| **`renderCategoryGrid`** di editTxModal | ✅ Berjalan | Dipanggil saat `openEditTxModal()` |
+
+---
+
+## Deploy Command
+
+```bash
+cd dirhamku-firebase
+firebase deploy --only hosting
+```
+
+Selalu jalankan syntax check dulu:
+```bash
+node --check public/app.js
+```
+
+---
+
+## Catatan Arsitektur
+
+- **Semua write ke Firestore** menggunakan `dateKey` (format `YYYY-MM-DD`, local timezone) agar tidak ada date drift
+- **Balance akun** dihitung ulang dari seluruh transaksi saat `loadData()` — tidak disimpan di Firestore
+- **`customCategories`** di-load dari `currentProfile.categories` dan dipakai di seluruh app
+- **Chart instances** disimpan di `this._statusChart` dan `this._perfChart` — di-destroy sebelum re-render untuk menghindari memory leak
+- Script version di HTML: `app.js?v=5.5.0` — update jika perlu force cache bust

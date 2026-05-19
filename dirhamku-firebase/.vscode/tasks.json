@@ -1,0 +1,10 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "update report",
+			"type": "shell",
+			"command": "node update_report.js"
+		}
+	]
+}
