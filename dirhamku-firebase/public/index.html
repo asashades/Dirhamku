@@ -97,15 +97,18 @@
         .today-hero[data-state="low"] .battery-level, .today-hero[data-state="over"] .battery-level { animation: batteryBlink 1.1s ease-in-out infinite; }
         .today-hero:not([data-charging="1"]) #batteryBolt { display: none; }
         #batteryBolt { animation: batteryBlink 1.6s ease-in-out infinite; }
+        .jar-pile.settle { animation: jarSettle .55s cubic-bezier(.3,1.6,.5,1); }
+        @keyframes jarSettle { 0% { transform: translateY(0); } 35% { transform: translateY(2.5px); } 100% { transform: translateY(0); } }
         @keyframes jarBob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2.5px); } }
         @keyframes jarShake { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-3deg); } 75% { transform: rotate(3deg); } }
         @keyframes jarShine { 0%, 100% { stroke-opacity: .25; } 50% { stroke-opacity: .6; } }
         @keyframes batteryBlink { 50% { opacity: .35; } }
-        .today-coin { position: absolute; width: 16px; height: 16px; margin-left: -8px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #FFE58A, #FFB800 60%, #C98B00); box-shadow: inset 0 0 0 2px rgba(255,255,255,.3), 0 2px 6px rgba(0,0,0,.25); pointer-events: none; opacity: 0; }
+        .today-coin { position: absolute; width: 15px; height: 15px; margin-left: -7.5px; border-radius: 50%; background: radial-gradient(circle at 34% 30%, #FFF6C4 0 12%, #F8CD4F 38%, #D9A21E 72%, #A8740A); box-shadow: inset 0 0 0 1.5px #A8740A, inset 0 0 0 3px rgba(255,246,196,.45), 0 3px 6px rgba(0,0,0,.35); pointer-events: none; opacity: 0; }
+        .today-coin.silver { background: radial-gradient(circle at 34% 30%, #fff 0 12%, #DCE2EA 40%, #9AA5B4 75%, #6B7686); box-shadow: inset 0 0 0 1.5px #6B7686, inset 0 0 0 3px rgba(255,255,255,.45), 0 3px 6px rgba(0,0,0,.35); }
         .today-coin.out { animation: coinOut 1s cubic-bezier(.3,.7,.4,1) forwards; }
         .today-coin.in { animation: coinIn .8s cubic-bezier(.5,0,.75,0) forwards; }
-        @keyframes coinOut { 0% { transform: translate(0,0) scale(.5); opacity: 0; } 15% { opacity: 1; } 55% { transform: translate(var(--dx), -44px) scale(1) rotate(180deg); opacity: 1; } 100% { transform: translate(calc(var(--dx) * 1.6), 14px) scale(.8) rotate(320deg); opacity: 0; } }
-        @keyframes coinIn { 0% { transform: translate(var(--dx), -48px) scale(1); opacity: 0; } 25% { opacity: 1; } 100% { transform: translate(0,0) scale(.4); opacity: 0; } }
+        @keyframes coinOut { 0% { transform: translate(0,0) scale(.5); opacity: 0; } 15% { opacity: 1; } 55% { transform: translate(var(--dx), -44px) scale(1) rotateY(540deg); opacity: 1; } 100% { transform: translate(calc(var(--dx) * 1.6), 16px) scale(.85) rotateY(900deg); opacity: 0; } }
+        @keyframes coinIn { 0% { transform: translate(var(--dx), -48px) scale(1) rotateY(0); opacity: 0; } 25% { opacity: 1; } 85% { opacity: 1; } 100% { transform: translate(0,0) scale(.55, .25) rotateY(720deg); opacity: 0; } }
         .today-delta { position: absolute; left: 50%; top: 28%; transform: translateX(-50%); font-family: 'Poppins', sans-serif; font-weight: 800; font-size: 12px; white-space: nowrap; pointer-events: none; animation: deltaFloat 1.6s ease-out forwards; text-shadow: 0 2px 8px rgba(0,0,0,.35); }
         @keyframes deltaFloat { 0% { transform: translate(-50%, 0); opacity: 0; } 15% { opacity: 1; } 100% { transform: translate(-50%, -34px); opacity: 0; } }
         .today-tagline { transition: opacity .4s ease, transform .4s ease; }
@@ -584,11 +587,28 @@
                                     <clipPath id="jarClip">
                                         <path d="M41 17 V22 C41 26 25 28 25 40 V84 Q25 93 34 93 H86 Q95 93 95 84 V40 C95 28 79 26 79 22 V17 Z"/>
                                     </clipPath>
-                                    <radialGradient id="jarCoinGrad" cx="35%" cy="30%" r="75%">
-                                        <stop offset="0%" stop-color="#FFF1A8"/>
-                                        <stop offset="45%" stop-color="#FFC933"/>
-                                        <stop offset="100%" stop-color="#D99A00"/>
+                                    <radialGradient id="coinGold" cx="32%" cy="28%" r="80%">
+                                        <stop offset="0%" stop-color="#FFF6C4"/>
+                                        <stop offset="35%" stop-color="#F8CD4F"/>
+                                        <stop offset="75%" stop-color="#D9A21E"/>
+                                        <stop offset="100%" stop-color="#A8740A"/>
                                     </radialGradient>
+                                    <radialGradient id="coinSilver" cx="32%" cy="28%" r="80%">
+                                        <stop offset="0%" stop-color="#FFFFFF"/>
+                                        <stop offset="40%" stop-color="#DCE2EA"/>
+                                        <stop offset="80%" stop-color="#9AA5B4"/>
+                                        <stop offset="100%" stop-color="#6B7686"/>
+                                    </radialGradient>
+                                    <linearGradient id="jarDepthV" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="55%" stop-color="#040720" stop-opacity="0"/>
+                                        <stop offset="100%" stop-color="#040720" stop-opacity=".45"/>
+                                    </linearGradient>
+                                    <linearGradient id="jarDepthH" x1="0" y1="0" x2="1" y2="0">
+                                        <stop offset="0%" stop-color="#040720" stop-opacity=".45"/>
+                                        <stop offset="22%" stop-color="#040720" stop-opacity="0"/>
+                                        <stop offset="78%" stop-color="#040720" stop-opacity="0"/>
+                                        <stop offset="100%" stop-color="#040720" stop-opacity=".5"/>
+                                    </linearGradient>
                                     <linearGradient id="jarGlassGrad" x1="0" y1="0" x2="1" y2="0">
                                         <stop offset="0%" stop-color="#fff" stop-opacity=".16"/>
                                         <stop offset="45%" stop-color="#fff" stop-opacity=".04"/>
@@ -599,7 +619,9 @@
                                     <ellipse cx="60" cy="95" rx="34" ry="3" fill="rgba(0,0,0,.35)"/>
                                     <g clip-path="url(#jarClip)">
                                         <rect x="0" y="0" width="120" height="100" fill="url(#jarGlassGrad)"/>
-                                        <g id="jarCoins" class="jar-coins" style="transform:translateY(80px)"></g>
+                                        <g id="jarCoins" class="jar-coins" style="transform:translateY(84px)"><g id="jarPile" class="jar-pile"></g></g>
+                                        <rect x="0" y="0" width="120" height="100" fill="url(#jarDepthV)"/>
+                                        <rect x="0" y="0" width="120" height="100" fill="url(#jarDepthH)"/>
                                         <rect x="0" y="0" width="120" height="100" fill="url(#jarGlassGrad)" opacity=".6"/>
                                     </g>
                                     <path d="M41 17 V22 C41 26 25 28 25 40 V84 Q25 93 34 93 H86 Q95 93 95 84 V40 C95 28 79 26 79 22 V17" fill="none" stroke="rgba(255,255,255,.85)" stroke-width="2.5" stroke-linejoin="round"/>

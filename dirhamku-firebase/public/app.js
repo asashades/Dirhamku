@@ -2653,12 +2653,12 @@ window.app = {
         if (!coins || !bat) return;
         // Coin pile top sits at y≈24 when full; slide it down below the jar floor as it empties.
         const apply = () => {
-            coins.style.transform = `translateY(${pct <= 0 ? 80 : (1 - pct) * 66}px)`;
+            coins.style.transform = `translateY(${pct <= 0 ? 84 : 4 + (1 - pct) * 64}px)`;
             bat.style.transform = `scaleX(${Math.max(pct, 0.001)})`;
         };
         if (fromEmpty) {
             [coins, bat].forEach(el => { el.style.transition = 'none'; });
-            coins.style.transform = 'translateY(80px)';
+            coins.style.transform = 'translateY(84px)';
             bat.style.transform = 'scaleX(0.001)';
             coins.getBoundingClientRect();
             [coins, bat].forEach(el => { el.style.transition = ''; });
@@ -2668,24 +2668,46 @@ window.app = {
         }
     },
 
-    // Builds the coin pile inside the jar once (rows of overlapping gold coins).
+    // Builds a natural-looking coin heap inside the jar once: coins settle in loose layers,
+    // tilted at random angles with a visible rim, mixed gold/silver, darker toward the back.
     _buildJarCoins: function() {
-        const g = document.getElementById('jarCoins');
+        const g = document.getElementById('jarPile');
         if (!g || g.childElementCount) return;
-        let seed = 7;
+        let seed = 11;
         const rnd = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
-        let html = '';
-        for (let row = 0; row < 12; row++) {
-            const y = 26 + row * 6.2;
-            for (let col = 0; col < 9; col++) {
-                const x = 20 + col * 10.5 + (row % 2 ? 5 : 0) + (rnd() - 0.5) * 3;
-                const yy = y + (rnd() - 0.5) * 2.5;
-                const rx = 6.2, ry = row === 0 ? 5.6 : 3.4 + rnd() * 1.4;
-                html += `<ellipse cx="${x.toFixed(1)}" cy="${yy.toFixed(1)}" rx="${rx}" ry="${ry.toFixed(1)}" fill="url(#jarCoinGrad)" stroke="#B7791F" stroke-width=".8"/>`;
-                if (row === 0 || rnd() > 0.55) html += `<ellipse cx="${x.toFixed(1)}" cy="${yy.toFixed(1)}" rx="${(rx * 0.55).toFixed(1)}" ry="${(ry * 0.55).toFixed(1)}" fill="none" stroke="#FFF3B0" stroke-opacity=".7" stroke-width=".7"/>`;
+        const range = (a, b) => a + rnd() * (b - a);
+        // Heap surface: a soft dome (higher in the middle) with a couple of lumps, so the top isn't flat.
+        const bumps = [range(0, Math.PI * 2), range(0, Math.PI * 2)];
+        const surface = x => 21 + 7 * Math.pow((x - 60) / 40, 2) + 2.2 * Math.sin(x / 7 + bumps[0]) + 1.4 * Math.sin(x / 3.3 + bumps[1]);
+        const coins = [];
+        for (let y = 96; y > 12; y -= range(3.2, 4.4)) {
+            let x = range(18, 26);
+            while (x < 102) {
+                const r = range(5.2, 7.6);
+                const kind = rnd();
+                let tilt, rot;
+                if (kind < 0.62) { tilt = range(0.26, 0.42); rot = range(-16, 16); }            // lying flat
+                else if (kind < 0.9) { tilt = range(0.45, 0.8); rot = range(-38, 38); }         // tilted, face showing
+                else { tilt = range(0.22, 0.32); rot = (rnd() < 0.5 ? -1 : 1) * range(52, 85); } // on its edge
+                const cx = x + range(-2, 2), cy = y + range(-1.6, 1.6);
+                if (cy >= surface(cx)) coins.push({ x: cx, y: cy, r, ry: r * tilt, rot, silver: rnd() < 0.3, back: rnd() < 0.35 ? 1 : 0, th: range(1.1, 1.9) });
+                x += r * range(1.25, 1.75);
             }
         }
-        g.innerHTML = html;
+        // Back layer first, then bottom-to-top so upper coins rest on the ones below.
+        coins.sort((a, b) => (b.back - a.back) || (b.y - a.y));
+        const f = n => n.toFixed(1);
+        g.innerHTML = coins.map(c => {
+            const rim = c.silver ? '#5F6B7A' : '#946408';
+            const ring = c.silver ? 'rgba(255,255,255,.55)' : 'rgba(255,240,180,.6)';
+            return `<g transform="translate(${f(c.x)} ${f(c.y)}) rotate(${f(c.rot)})">` +
+                `<ellipse cy="${f(c.th)}" rx="${f(c.r)}" ry="${f(c.ry)}" fill="${rim}"/>` +
+                `<ellipse rx="${f(c.r)}" ry="${f(c.ry)}" fill="url(#${c.silver ? 'coinSilver' : 'coinGold'})"/>` +
+                `<ellipse rx="${f(c.r * 0.72)}" ry="${f(c.ry * 0.72)}" fill="none" stroke="${ring}" stroke-width=".6"/>` +
+                `<path d="M${f(-c.r * 0.62)} ${f(-c.ry * 0.25)} A${f(c.r * 0.7)} ${f(c.ry * 0.7)} 0 0 1 ${f(-c.r * 0.05)} ${f(-c.ry * 0.72)}" fill="none" stroke="#fff" stroke-opacity=".75" stroke-width=".7" stroke-linecap="round"/>` +
+                (c.back ? `<ellipse rx="${f(c.r)}" ry="${f(c.ry)}" fill="#040720" fill-opacity=".28"/>` : '') +
+                `</g>`;
+        }).join('');
     },
 
     // Coins pop out of the jar when money leaves, drop in when money arrives.
@@ -2696,7 +2718,7 @@ window.app = {
         const count = Math.min(6, Math.max(1, Math.ceil(Math.abs(delta) / Math.max(1, Math.abs(base)) * 4)));
         for (let i = 0; i < count; i++) {
             const coin = document.createElement('div');
-            coin.className = `today-coin ${out ? 'out' : 'in'}`;
+            coin.className = `today-coin ${out ? 'out' : 'in'}${Math.random() < 0.3 ? ' silver' : ''}`;
             coin.style.left = '50%';
             coin.style.top = '10%';
             coin.style.setProperty('--dx', `${Math.round((Math.random() - 0.5) * 70)}px`);
@@ -2710,7 +2732,11 @@ window.app = {
         lbl.textContent = `${out ? '-' : '+'}${this._rpShort(Math.abs(delta))}`;
         fx.appendChild(lbl);
         setTimeout(() => lbl.remove(), 1700);
-        if (!out) SFX.coin();
+        if (!out) {
+            SFX.coin();
+            const pile = document.getElementById('jarPile');
+            if (pile) setTimeout(() => { pile.classList.remove('settle'); pile.getBoundingClientRect(); pile.classList.add('settle'); }, 650);
+        }
     },
 
     getTodayVisual: function() {
