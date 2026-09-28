@@ -87,23 +87,19 @@
         .today-hero.is-compact .today-amount { font-size: 22px; }
         .today-collapsible { max-height: 170px; opacity: 1; overflow: hidden; transition: max-height .35s ease, opacity .25s ease, margin .35s ease; }
         .today-hero.is-compact .today-collapsible { max-height: 0; opacity: 0; margin-top: 0; }
-        .piggy-level, .battery-level { transition: transform 1.4s cubic-bezier(.22,1,.36,1); }
+        .jar-coins, .battery-level { transition: transform 1.4s cubic-bezier(.22,1,.36,1); }
         .battery-level { transform-box: fill-box; transform-origin: left center; }
-        .piggy-wave { animation: piggyWave 2.4s linear infinite; }
-        .piggy-wave.back { animation-duration: 3.8s; animation-direction: reverse; opacity: .5; }
-        .piggy-body { animation: piggyBob 3s ease-in-out infinite; transform-box: fill-box; transform-origin: 50% 90%; }
-        .today-hero[data-state="low"] .piggy-body, .today-hero[data-state="over"] .piggy-body { animation: piggyShake .7s ease-in-out infinite; }
+        .jar-body { animation: jarBob 3.2s ease-in-out infinite; transform-box: fill-box; transform-origin: 50% 100%; }
+        .jar-shine { animation: jarShine 3.5s ease-in-out infinite; }
+        .jar-crack { display: none; }
+        .today-hero[data-state="low"] .jar-body, .today-hero[data-state="over"] .jar-body { animation: jarShake .7s ease-in-out infinite; }
+        .today-hero[data-state="over"] .jar-crack { display: inline; }
         .today-hero[data-state="low"] .battery-level, .today-hero[data-state="over"] .battery-level { animation: batteryBlink 1.1s ease-in-out infinite; }
-        .piggy-eye-sad, .piggy-sweat { display: none; }
-        .today-hero[data-state="over"] .piggy-eye-open { display: none; }
-        .today-hero[data-state="over"] .piggy-eye-sad { display: inline; }
-        .today-hero[data-state="low"] .piggy-sweat, .today-hero[data-state="over"] .piggy-sweat { display: inline; animation: piggySweat 1.6s ease-in infinite; }
         .today-hero:not([data-charging="1"]) #batteryBolt { display: none; }
         #batteryBolt { animation: batteryBlink 1.6s ease-in-out infinite; }
-        @keyframes piggyWave { from { transform: translateX(0); } to { transform: translateX(-60px); } }
-        @keyframes piggyBob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
-        @keyframes piggyShake { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-3deg); } 75% { transform: rotate(3deg); } }
-        @keyframes piggySweat { 0% { transform: translateY(0); opacity: 0; } 30% { opacity: 1; } 100% { transform: translateY(10px); opacity: 0; } }
+        @keyframes jarBob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2.5px); } }
+        @keyframes jarShake { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-3deg); } 75% { transform: rotate(3deg); } }
+        @keyframes jarShine { 0%, 100% { stroke-opacity: .25; } 50% { stroke-opacity: .6; } }
         @keyframes batteryBlink { 50% { opacity: .35; } }
         .today-coin { position: absolute; width: 16px; height: 16px; margin-left: -8px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #FFE58A, #FFB800 60%, #C98B00); box-shadow: inset 0 0 0 2px rgba(255,255,255,.3), 0 2px 6px rgba(0,0,0,.25); pointer-events: none; opacity: 0; }
         .today-coin.out { animation: coinOut 1s cubic-bezier(.3,.7,.4,1) forwards; }
@@ -120,7 +116,7 @@
         .today-chip { flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 999px; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.1); font-size: 10px; font-weight: 700; white-space: nowrap; }
         .today-weekbar { transition: height .9s cubic-bezier(.22,1,.36,1); }
         @media (prefers-reduced-motion: reduce) {
-            .piggy-wave, .piggy-body, .today-glow, .battery-level, .piggy-sweat, #batteryBolt { animation: none !important; }
+            .jar-body, .jar-shine, .today-glow, .battery-level, #batteryBolt { animation: none !important; }
         }
     </style>
 </head>
@@ -581,44 +577,39 @@
                     </div>
 
                     <div class="flex items-center gap-4 mt-4 relative z-10">
-                        <button type="button" id="todayVisualWrap" onclick="app.toggleTodayVisual()" class="today-visual relative shrink-0 active:scale-95 transition-transform" title="Ganti celengan / baterai">
-                            <!-- Piggy bank -->
-                            <svg id="todayPiggy" viewBox="0 0 120 100" aria-hidden="true">
+                        <button type="button" id="todayVisualWrap" onclick="app.toggleTodayVisual()" class="today-visual relative shrink-0 active:scale-95 transition-transform" title="Ganti toples / baterai">
+                            <!-- Glass coin jar -->
+                            <svg id="todayJar" viewBox="0 0 120 100" aria-hidden="true">
                                 <defs>
-                                    <clipPath id="piggyClip">
-                                        <ellipse cx="56" cy="54" rx="42" ry="30"/>
-                                        <path d="M68 32 L77 12 L90 31 Z"/>
-                                        <ellipse cx="98" cy="58" rx="11" ry="10"/>
+                                    <clipPath id="jarClip">
+                                        <path d="M41 17 V22 C41 26 25 28 25 40 V84 Q25 93 34 93 H86 Q95 93 95 84 V40 C95 28 79 26 79 22 V17 Z"/>
                                     </clipPath>
-                                    <linearGradient id="todayFillGrad" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="0%" style="stop-color:var(--fill)"/>
-                                        <stop offset="100%" style="stop-color:var(--fill-2)"/>
+                                    <radialGradient id="jarCoinGrad" cx="35%" cy="30%" r="75%">
+                                        <stop offset="0%" stop-color="#FFF1A8"/>
+                                        <stop offset="45%" stop-color="#FFC933"/>
+                                        <stop offset="100%" stop-color="#D99A00"/>
+                                    </radialGradient>
+                                    <linearGradient id="jarGlassGrad" x1="0" y1="0" x2="1" y2="0">
+                                        <stop offset="0%" stop-color="#fff" stop-opacity=".16"/>
+                                        <stop offset="45%" stop-color="#fff" stop-opacity=".04"/>
+                                        <stop offset="100%" stop-color="#fff" stop-opacity=".12"/>
                                     </linearGradient>
                                 </defs>
-                                <g class="piggy-body">
-                                    <path d="M15 50 q-9 -2 -7 -10 q2 -6 7 -2" fill="none" stroke="rgba(255,255,255,.75)" stroke-width="3" stroke-linecap="round"/>
-                                    <rect x="30" y="74" width="12" height="18" rx="4" fill="rgba(255,255,255,.12)" stroke="rgba(255,255,255,.75)" stroke-width="2.5"/>
-                                    <rect x="66" y="74" width="12" height="18" rx="4" fill="rgba(255,255,255,.12)" stroke="rgba(255,255,255,.75)" stroke-width="2.5"/>
-                                    <g clip-path="url(#piggyClip)">
-                                        <rect x="0" y="0" width="120" height="100" fill="rgba(255,255,255,.08)"/>
-                                        <g id="piggyLevel" class="piggy-level" style="transform:translateY(90px)">
-                                            <g class="piggy-wave back"><path d="M0 2 Q7.5 -3 15 2 T30 2 T45 2 T60 2 T75 2 T90 2 T105 2 T120 2 T135 2 T150 2 T165 2 T180 2 V110 H0 Z" fill="url(#todayFillGrad)"/></g>
-                                            <g class="piggy-wave"><path d="M0 0 Q7.5 -4 15 0 T30 0 T45 0 T60 0 T75 0 T90 0 T105 0 T120 0 T135 0 T150 0 T165 0 T180 0 V110 H0 Z" fill="url(#todayFillGrad)"/></g>
-                                            <circle cx="36" cy="14" r="4" fill="rgba(255,255,255,.28)"/>
-                                            <circle cx="58" cy="22" r="5" fill="rgba(255,255,255,.22)"/>
-                                            <circle cx="78" cy="12" r="3.5" fill="rgba(255,255,255,.28)"/>
-                                            <circle cx="47" cy="34" r="4" fill="rgba(255,255,255,.18)"/>
-                                        </g>
+                                <g class="jar-body">
+                                    <ellipse cx="60" cy="95" rx="34" ry="3" fill="rgba(0,0,0,.35)"/>
+                                    <g clip-path="url(#jarClip)">
+                                        <rect x="0" y="0" width="120" height="100" fill="url(#jarGlassGrad)"/>
+                                        <g id="jarCoins" class="jar-coins" style="transform:translateY(80px)"></g>
+                                        <rect x="0" y="0" width="120" height="100" fill="url(#jarGlassGrad)" opacity=".6"/>
                                     </g>
-                                    <ellipse cx="56" cy="54" rx="42" ry="30" fill="none" stroke="rgba(255,255,255,.85)" stroke-width="3"/>
-                                    <path d="M68 32 L77 12 L90 31" fill="none" stroke="rgba(255,255,255,.85)" stroke-width="3" stroke-linejoin="round"/>
-                                    <ellipse cx="98" cy="58" rx="11" ry="10" fill="rgba(4,7,32,.35)" stroke="rgba(255,255,255,.85)" stroke-width="3"/>
-                                    <ellipse cx="95" cy="58" rx="1.8" ry="2.6" fill="#fff"/>
-                                    <ellipse cx="101" cy="58" rx="1.8" ry="2.6" fill="#fff"/>
-                                    <rect x="44" y="21" width="22" height="5" rx="2.5" fill="#040720" stroke="rgba(255,255,255,.85)" stroke-width="2"/>
-                                    <circle class="piggy-eye-open" cx="80" cy="45" r="3.2" fill="#fff"/>
-                                    <path class="piggy-eye-sad" d="M76 47 q4 -4 8 0" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>
-                                    <path class="piggy-sweat" d="M88 30 q-3 5 0 7 q3 -2 0 -7 Z" fill="#7DD3FC"/>
+                                    <path d="M41 17 V22 C41 26 25 28 25 40 V84 Q25 93 34 93 H86 Q95 93 95 84 V40 C95 28 79 26 79 22 V17" fill="none" stroke="rgba(255,255,255,.85)" stroke-width="2.5" stroke-linejoin="round"/>
+                                    <path class="jar-shine" d="M32 44 V78" stroke="#fff" stroke-opacity=".45" stroke-width="4" stroke-linecap="round"/>
+                                    <path d="M33 37 Q35 32 40 31" fill="none" stroke="#fff" stroke-opacity=".45" stroke-width="2.5" stroke-linecap="round"/>
+                                    <path class="jar-crack" d="M78 46 L72 55 L79 60 L71 72" fill="none" stroke="#FCA5A5" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                                    <rect x="36" y="7" width="48" height="11" rx="3.5" fill="#FFB800" stroke="rgba(255,255,255,.85)" stroke-width="2"/>
+                                    <line x1="42" y1="10.5" x2="42" y2="14.5" stroke="#C98B00" stroke-width="1.5" stroke-linecap="round"/>
+                                    <line x1="78" y1="10.5" x2="78" y2="14.5" stroke="#C98B00" stroke-width="1.5" stroke-linecap="round"/>
+                                    <rect x="50" y="10.5" width="20" height="4" rx="2" fill="#040720"/>
                                 </g>
                             </svg>
                             <!-- Battery -->
