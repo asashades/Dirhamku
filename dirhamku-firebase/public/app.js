@@ -1454,6 +1454,7 @@ window.app = {
         document.getElementById('homeTotalBalance').textContent = `Rp ${this.format(totalBal)}`;
         
         this.renderHome();
+        this.renderToday();
         this.renderTransactions();
         // Check inconsistency (yesterday had no transactions and no daily log)
         this.checkInconsistency();
@@ -1691,7 +1692,7 @@ window.app = {
         const activeTab = document.getElementById('tab-' + tab);
         if (!activeTab) return;
         activeTab.classList.remove('hidden');
-        if (['home', 'transactions', 'input', 'settings', 'report'].includes(tab)) activeTab.classList.add('flex');
+        if (['home', 'today', 'transactions', 'input', 'settings', 'report'].includes(tab)) activeTab.classList.add('flex');
     },
 
     // ── Dashboard Settings ──────────────────────────────────────────────────
@@ -2464,6 +2465,500 @@ window.app = {
             await db.collection('users').doc(currentUser.uid).update({ paydayDate: val });
             currentProfile.paydayDate = val;
             this.toast('Tanggal gajian disimpan!');
+        } catch(e) { this.toast(e.message, true); }
+    },
+
+    // ── DAY MODE: Today's Budget ────────────────────────────────────────────
+    // Income & recurring bills are spread evenly across the payday cycle.
+    // Whatever isn't spent rolls over to the next day.
+    _recurringCache: null,      // recurring_transactions docs (null = not loaded yet)
+    _todayState: null,
+    _todayLastLeft: null,
+    _todayIntro: false,
+    _todayGreeted: false,
+    _todayTaglineTimer: null,
+    _todayTaglineIdx: 0,
+    _todayTaglines: [
+        "We spread your bills out daily, just like your income. What's left is yours to spend.",
+        "Anything you don't spend rolls over to tomorrow's budget.",
+        "These numbers will change as you spend, save, or add money."
+    ],
+
+    getHomeMode: function() {
+        try { return localStorage.getItem('dirhamku_home_mode') === 'day' ? 'day' : 'month'; } catch(e) { return 'month'; }
+    },
+
+    setHomeMode: function(mode) {
+        try { localStorage.setItem('dirhamku_home_mode', mode === 'day' ? 'day' : 'month'); } catch(e) { /* ignore */ }
+        this.switchTab(mode === 'day' ? 'today' : 'home');
+    },
+
+    _isTodayActive: function() {
+        const el = document.getElementById('tab-today');
+        return !!el && !el.classList.contains('hidden');
+    },
+
+    // Moves the single chat UI between the Input tab and Day Mode, keeping its history & listeners.
+    _mountChat: function(where) {
+        const chat = document.getElementById('inputChatMode');
+        const slot = document.getElementById('todayChatSlot');
+        const tabInput = document.getElementById('tab-input');
+        const form = document.getElementById('inputFormMode');
+        if (!chat || !slot || !tabInput || !form) return;
+        if (where === 'today') {
+            if (chat.parentElement !== slot) slot.appendChild(chat);
+            chat.classList.remove('hidden');
+            chat.classList.add('flex');
+        } else if (chat.parentElement !== tabInput) {
+            tabInput.insertBefore(chat, form);
+            const formVisible = !form.classList.contains('hidden');
+            chat.classList.toggle('hidden', formVisible);
+            chat.classList.toggle('flex', !formVisible);
+        }
+    },
+
+    _dayDiff: function(a, b) {
+        return Math.round((Date.UTC(b.getFullYear(), b.getMonth(), b.getDate()) - Date.UTC(a.getFullYear(), a.getMonth(), a.getDate())) / 86400000);
+    },
+
+    // Current payday cycle: [start, end) where start = last payday, end = next payday.
+    getBudgetCycle: function(now = new Date()) {
+        const payday = Math.min(Math.max(parseInt(currentProfile?.paydayDate) || 25, 1), 31);
+        const clampDay = (y, m) => new Date(y, m, Math.min(payday, new Date(y, m + 1, 0).getDate()));
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        let start = clampDay(today.getFullYear(), today.getMonth());
+        if (start > today) start = clampDay(today.getFullYear(), today.getMonth() - 1);
+        const end = clampDay(start.getFullYear(), start.getMonth() + 1);
+        const lastDay = new Date(end.getFullYear(), end.getMonth(), end.getDate() - 1);
+        return {
+            start, end, today, lastDay,
+            totalDays: this._dayDiff(start, end),
+            dayIndex: this._dayDiff(start, today),
+            startStr: this.toLocalDateString(start),
+            todayStr: this.toLocalDateString(today)
+        };
+    },
+
+    _isBudgetExcluded: function(tx) {
+        const catDef = customCategories.find(c => c.name === tx.category);
+        return tx.exclude_from_budget === true || (tx.exclude_from_budget === undefined && catDef?.exclude_from_budget === true);
+    },
+
+    // Expenses that eat the daily budget: not a recurring bill (already reserved) and not excluded from budget.
+    _isDailySpend: function(tx) {
+        return tx.type === 'Expense' && !tx.recurringId && !this._isBudgetExcluded(tx);
+    },
+
+    _isSavingsAccount: function(accountId) {
+        const a = accounts.find(x => x.id === accountId);
+        return !!a && (a.purpose === 'emergency_fund' || a.is_excluded_from_budget === true);
+    },
+
+    computeTodayBudget: function() {
+        const c = this.getBudgetCycle();
+        const plannedIncome = Number(currentProfile?.monthlyIncome) || 0;
+        let actualIncome = 0, spentBefore = 0, spentToday = 0, toSavings = 0, fromSavings = 0;
+
+        allTransactions.forEach(tx => {
+            const d = tx.dateStr;
+            if (!d || d < c.startStr || d > c.todayStr) return;
+            if (tx.type === 'Income') {
+                actualIncome += tx.amount;
+            } else if (tx.type === 'Transfer') {
+                const fromS = this._isSavingsAccount(tx.fromAccountId);
+                const toS = this._isSavingsAccount(tx.toAccountId);
+                if (!fromS && toS) toSavings += tx.amount;
+                else if (fromS && !toS) fromSavings += tx.amount;
+            } else if (this._isDailySpend(tx)) {
+                if (d === c.todayStr) spentToday += tx.amount;
+                else spentBefore += tx.amount;
+            }
+        });
+
+        // Planned income is the base; anything received above it is "extra money" added to the pool.
+        const income = plannedIncome > 0 ? plannedIncome : actualIncome;
+        const extraIncome = plannedIncome > 0 ? Math.max(0, actualIncome - plannedIncome) : 0;
+
+        const bills = (this._recurringCache || [])
+            .filter(r => Number(r.amount) > 0 && (!r.endDate || r.endDate >= c.startStr))
+            .map(r => {
+                const amt = Number(r.amount);
+                let perCycle = amt;
+                if (r.frequency === 'weekly') perCycle = amt * c.totalDays / 7;
+                else if (r.frequency === 'yearly') perCycle = amt / 12;
+                else if (r.frequency === 'daily') perCycle = amt * c.totalDays;
+                return { name: r.note || r.category || 'Tagihan', category: r.category, amount: amt, frequency: r.frequency, perCycle, perDay: perCycle / c.totalDays };
+            })
+            .sort((a, b) => b.perCycle - a.perCycle);
+        const billsTotal = bills.reduce((s, b) => s + b.perCycle, 0);
+
+        const dailyIncome = income / c.totalDays;
+        const dailyBills = billsTotal / c.totalDays;
+        const base = dailyIncome - dailyBills;
+        const rollover = base * c.dayIndex - spentBefore;
+        const adjustments = extraIncome + fromSavings - toSavings;
+        const todayBudget = base + rollover + adjustments;
+        const left = todayBudget - spentToday;
+        const daysLeft = c.totalDays - c.dayIndex; // incl. today
+        const pct = todayBudget > 0 ? Math.min(1, Math.max(0, left / todayBudget)) : 0;
+
+        let state;
+        if (this._recurringCache === null) state = 'loading';
+        else if (income <= 0) state = 'setup';
+        else if (left < 0 || base <= 0) state = 'over';
+        else if (pct < 0.2) state = 'low';
+        else if (pct < 0.5) state = 'mid';
+        else state = 'good';
+
+        return {
+            cycle: c, plannedIncome, actualIncome, income, extraIncome, bills, billsTotal,
+            dailyIncome, dailyBills, base, rollover, toSavings, fromSavings, adjustments,
+            todayBudget, spentBefore, spentToday, left, pct, daysLeft, state,
+            tomorrow: base + left,
+            cycleLeft: left + base * (daysLeft - 1)
+        };
+    },
+
+    _rp: function(v) {
+        return `${v < 0 ? '-' : ''}Rp ${this.format(Math.abs(v))}`;
+    },
+
+    _rpShort: function(v) {
+        const abs = Math.abs(v), sign = v < 0 ? '-' : '';
+        if (abs >= 1000000) return `${sign}${(abs / 1000000).toFixed(abs >= 10000000 ? 0 : 1).replace('.', ',').replace(',0', '')}jt`;
+        if (abs >= 1000) return `${sign}${Math.round(abs / 1000)}rb`;
+        return `${sign}${Math.round(abs)}`;
+    },
+
+    _animateNumber: function(el, from, to, dur = 900) {
+        if (!el) return;
+        if (el._raf) cancelAnimationFrame(el._raf);
+        if (from === to || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) { el.textContent = this._rp(to); return; }
+        const t0 = performance.now();
+        const step = (now) => {
+            const t = Math.min(1, (now - t0) / dur);
+            const e = 1 - Math.pow(1 - t, 3);
+            el.textContent = this._rp(from + (to - from) * e);
+            if (t < 1) el._raf = requestAnimationFrame(step);
+        };
+        el._raf = requestAnimationFrame(step);
+    },
+
+    _setTodayFill: function(pct, fromEmpty) {
+        const lvl = document.getElementById('piggyLevel');
+        const bat = document.getElementById('batteryLevel');
+        if (!lvl || !bat) return;
+        const apply = () => {
+            lvl.style.transform = `translateY(${86 - pct * 62}px)`;
+            bat.style.transform = `scaleX(${Math.max(pct, 0.001)})`;
+        };
+        if (fromEmpty) {
+            [lvl, bat].forEach(el => { el.style.transition = 'none'; });
+            lvl.style.transform = 'translateY(90px)';
+            bat.style.transform = 'scaleX(0.001)';
+            lvl.getBoundingClientRect();
+            [lvl, bat].forEach(el => { el.style.transition = ''; });
+            requestAnimationFrame(() => requestAnimationFrame(apply));
+        } else {
+            apply();
+        }
+    },
+
+    // Coins pop out of the piggy when money leaves, drop in when money arrives.
+    _todayFx: function(delta, base) {
+        const fx = document.getElementById('todayFx');
+        if (!fx || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+        const out = delta < 0;
+        const count = Math.min(6, Math.max(1, Math.ceil(Math.abs(delta) / Math.max(1, Math.abs(base)) * 4)));
+        for (let i = 0; i < count; i++) {
+            const coin = document.createElement('div');
+            coin.className = `today-coin ${out ? 'out' : 'in'}`;
+            coin.style.left = '46%';
+            coin.style.top = '18%';
+            coin.style.setProperty('--dx', `${Math.round((Math.random() - 0.5) * 70)}px`);
+            coin.style.animationDelay = `${i * 110}ms`;
+            fx.appendChild(coin);
+            setTimeout(() => coin.remove(), 1300 + i * 110);
+        }
+        const lbl = document.createElement('div');
+        lbl.className = 'today-delta';
+        lbl.style.color = out ? '#FCA5A5' : '#6EE7B7';
+        lbl.textContent = `${out ? '-' : '+'}${this._rpShort(Math.abs(delta))}`;
+        fx.appendChild(lbl);
+        setTimeout(() => lbl.remove(), 1700);
+        if (!out) SFX.coin();
+    },
+
+    getTodayVisual: function() {
+        try { return localStorage.getItem('dirhamku_today_visual') === 'battery' ? 'battery' : 'piggy'; } catch(e) { return 'piggy'; }
+    },
+
+    toggleTodayVisual: function() {
+        const next = this.getTodayVisual() === 'piggy' ? 'battery' : 'piggy';
+        try { localStorage.setItem('dirhamku_today_visual', next); } catch(e) { /* ignore */ }
+        this._applyTodayVisual();
+        this._setTodayFill(this._todayState?.pct || 0, true);
+    },
+
+    _applyTodayVisual: function() {
+        const isBattery = this.getTodayVisual() === 'battery';
+        document.getElementById('todayPiggy')?.classList.toggle('hidden', isBattery);
+        document.getElementById('todayBattery')?.classList.toggle('hidden', !isBattery);
+    },
+
+    showToday: function() {
+        this._todayIntro = true;
+        this._applyTodayVisual();
+        this.renderToday();
+        this._startTodayTagline();
+        setTimeout(() => this.scrollChatToBottom(), 100);
+    },
+
+    _startTodayTagline: function() {
+        this._stopTodayTagline();
+        this._todayTaglineTimer = setInterval(() => {
+            const s = this._todayState;
+            if (!s || ['setup', 'loading'].includes(s.state) || s.base <= 0) return;
+            const el = document.getElementById('todayTagline');
+            if (!el || document.getElementById('todayHero')?.classList.contains('is-compact')) return;
+            el.classList.add('is-out');
+            setTimeout(() => {
+                this._todayTaglineIdx = (this._todayTaglineIdx + 1) % this._todayTaglines.length;
+                el.textContent = this._todayTaglines[this._todayTaglineIdx];
+                el.classList.remove('is-out');
+            }, 400);
+        }, 6000);
+    },
+
+    _stopTodayTagline: function() {
+        if (this._todayTaglineTimer) clearInterval(this._todayTaglineTimer);
+        this._todayTaglineTimer = null;
+    },
+
+    renderToday: function() {
+        const hero = document.getElementById('todayHero');
+        if (!hero || !currentProfile) return;
+        const s = this.computeTodayBudget();
+        this._todayState = s;
+        const active = this._isTodayActive();
+
+        document.getElementById('todayDateLabel').textContent = s.cycle.today.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'short' });
+        hero.dataset.state = s.state;
+        hero.dataset.charging = (s.state !== 'setup' && s.rollover + s.adjustments > 0) ? '1' : '0';
+
+        const amountEl = document.getElementById('todayLeftAmount');
+        const ofEl = document.getElementById('todayOfLabel');
+        const labelEl = document.getElementById('todayLeftLabel');
+        const chipsEl = document.getElementById('todayChips');
+        const taglineEl = document.getElementById('todayTagline');
+        const taglineIcon = document.getElementById('todayTaglineIcon');
+        const bar = document.getElementById('todayBar');
+
+        if (s.state === 'loading') {
+            amountEl.textContent = 'Rp —';
+            ofEl.textContent = 'Menghitung budget...';
+            return;
+        }
+
+        if (s.state === 'setup') {
+            labelEl.textContent = 'Budget hari ini';
+            amountEl.textContent = 'Rp —';
+            ofEl.textContent = 'Isi pemasukan bulanan dulu ya';
+            bar.style.width = '0%';
+            chipsEl.innerHTML = `<button onclick="app.openTodayBreakdown(true)" class="today-chip !bg-secondary !text-primary !border-secondary active:scale-95 transition"><i class="ph-bold ph-plus"></i> Set pemasukan bulanan</button>`;
+            taglineIcon.className = 'ph-fill ph-piggy-bank text-secondary text-sm mt-px shrink-0';
+            taglineEl.textContent = 'Celengan lo masih kosong. Kasih tau gajian lo berapa, nanti kita bagi rata per hari (udah dipotong tagihan & langganan).';
+            this._setTodayFill(0, false);
+            this._todayLastLeft = null;
+            return;
+        }
+
+        const introFrom = this._todayIntro ? 0 : null;
+        const prev = this._todayLastLeft;
+        labelEl.textContent = s.left < 0 ? 'Over budget hari ini' : 'Sisa hari ini';
+        this._animateNumber(amountEl, introFrom ?? (prev ?? s.left), s.left);
+        ofEl.textContent = s.todayBudget > 0
+            ? `dari ${this._rp(s.todayBudget)} hari ini · terpakai ${this._rpShort(s.spentToday)}`
+            : `jatah hari ini udah minus ${this._rpShort(Math.abs(s.todayBudget))} dari kemarin`;
+        bar.style.width = `${Math.round(s.pct * 100)}%`;
+        this._setTodayFill(s.pct, this._todayIntro);
+        if (active && !this._todayIntro && prev !== null && Math.abs(s.left - prev) >= 1) this._todayFx(s.left - prev, s.base);
+        this._todayIntro = false;
+        this._todayLastLeft = s.left;
+
+        const carry = s.rollover + s.adjustments;
+        const carryChip = carry >= 0
+            ? `<span class="today-chip text-emerald-300"><i class="ph-bold ph-arrow-bend-down-right"></i> Rollover +${this._rpShort(carry)}</span>`
+            : `<span class="today-chip text-red-300"><i class="ph-bold ph-arrow-bend-down-right"></i> Minus kemarin ${this._rpShort(Math.abs(carry))}</span>`;
+        chipsEl.innerHTML = `
+            <span class="today-chip"><i class="ph-bold ph-calendar-blank"></i> ${this._rpShort(s.base)}/hari</span>
+            ${carryChip}
+            <span class="today-chip ${s.tomorrow < 0 ? 'text-red-300' : ''}"><i class="ph-bold ph-sun-horizon"></i> Besok ${s.tomorrow < 0 ? `minus ${this._rpShort(Math.abs(s.tomorrow))}` : `~${this._rpShort(s.tomorrow)}`}</span>
+            <span class="today-chip"><i class="ph-bold ph-hourglass-medium"></i> ${s.daysLeft} hari ke gajian</span>`;
+
+        if (s.base <= 0) {
+            taglineIcon.className = 'ph-fill ph-warning text-red-300 text-sm mt-px shrink-0';
+            taglineEl.textContent = `Tagihan & langganan lo (${this._rp(s.billsTotal)}) udah ≥ pemasukan. Cek lagi recurring lo ya bestie 🚨`;
+        } else {
+            taglineIcon.className = 'ph-fill ph-sparkle text-secondary text-sm mt-px shrink-0';
+            taglineEl.textContent = this._todayTaglines[this._todayTaglineIdx];
+        }
+
+        if (active && !this._todayGreeted) {
+            this._todayGreeted = true;
+            this.addChatBubble(
+                `☀️ <b>Day Mode on!</b> Budget lo hari ini <b>${this._rp(s.todayBudget)}</b>, sisa <b>${this._rp(s.left)}</b>.<br>` +
+                `Ketik aja pengeluaran lo, misal <code>kopi 25rb</code> — celengannya langsung update 🐷`,
+                'bot', true
+            );
+        }
+
+        const sheet = document.getElementById('todayBreakdownSheet');
+        if (sheet && !sheet.classList.contains('hidden')) this.renderTodayBreakdown();
+    },
+
+    // Short summary used by chat after saving / on "budget hari ini".
+    todaySummaryText: function() {
+        const s = this._todayState || this.computeTodayBudget();
+        if (s.state === 'setup') return '🐷 Pemasukan bulanan belum di-set. Buka Day Mode → ⚙️ buat isi dulu ya.';
+        if (s.left < 0) return `🚨 Hari ini over <b>${this._rp(Math.abs(s.left))}</b>. Minusnya kebawa ke besok, jadi jatah besok ${s.tomorrow < 0 ? `masih minus <b>${this._rp(Math.abs(s.tomorrow))}</b>` : `tinggal <b>${this._rp(s.tomorrow)}</b>`}. Rem dulu ya bestie 🙏`;
+        return `🐷 Sisa budget hari ini <b>${this._rp(s.left)}</b> dari ${this._rp(s.todayBudget)}. Kalau nggak dipakai, besok jadi ~<b>${this._rp(s.tomorrow)}</b>.`;
+    },
+
+    openTodayBreakdown: function(focusIncome) {
+        this.renderTodayBreakdown();
+        this.openSettingsSheet('todayBreakdownSheet');
+        if (focusIncome) setTimeout(() => document.getElementById('todayIncomeInput')?.focus(), 150);
+    },
+
+    renderTodayBreakdown: function() {
+        const content = document.getElementById('todayBreakdownContent');
+        if (!content || !currentProfile) return;
+        const s = this.computeTodayBudget();
+        const c = s.cycle;
+        const fmtD = d => d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+        document.getElementById('todayBreakdownCycle').textContent = `Siklus ${fmtD(c.start)} – ${fmtD(c.lastDay)} · hari ke-${c.dayIndex + 1} dari ${c.totalDays}`;
+
+        const row = (label, sub, value, cls = 'text-primary', bold = false) => `
+            <div class="flex items-center justify-between gap-3 py-2 ${bold ? 'border-t border-gray-200 mt-1 pt-3' : ''}">
+                <div class="min-w-0">
+                    <p class="text-xs ${bold ? 'font-bold text-primary' : 'font-semibold text-gray-600'}">${label}</p>
+                    ${sub ? `<p class="text-[10px] text-gray-400">${sub}</p>` : ''}
+                </div>
+                <p class="text-sm font-bold font-heading shrink-0 ${cls}">${value}</p>
+            </div>`;
+
+        const incomeSub = s.plannedIncome > 0
+            ? `${this._rp(s.plannedIncome)} ÷ ${c.totalDays} hari`
+            : `Dari income tercatat siklus ini (${this._rp(s.actualIncome)}) ÷ ${c.totalDays} hari`;
+
+        let math = '';
+        if (s.income > 0) {
+            math += row('Pemasukan per hari', incomeSub, `+${this._rp(s.dailyIncome)}`, 'text-success');
+            math += row(`Tagihan & langganan (${s.bills.length})`, `${this._rp(s.billsTotal)} per siklus`, `-${this._rp(s.dailyBills)}`, 'text-danger');
+            math += row('Budget harian dasar', 'Ini jatah lo tiap hari', this._rp(s.base), 'text-primary', true);
+            math += row('Rollover', c.dayIndex > 0 ? `${c.dayIndex} hari sebelumnya, terpakai ${this._rp(s.spentBefore)}` : 'Hari pertama siklus', `${s.rollover >= 0 ? '+' : ''}${this._rp(s.rollover)}`, s.rollover >= 0 ? 'text-success' : 'text-danger');
+            if (s.extraIncome > 0) math += row('Uang tambahan', 'Income di atas pemasukan bulanan', `+${this._rp(s.extraIncome)}`, 'text-success');
+            if (s.fromSavings > 0) math += row('Ambil dari tabungan', 'Transfer dari akun dana darurat', `+${this._rp(s.fromSavings)}`, 'text-success');
+            if (s.toSavings > 0) math += row('Ditabung', 'Transfer ke akun dana darurat', `-${this._rp(s.toSavings)}`, 'text-danger');
+            math += row('Budget hari ini', '', this._rp(s.todayBudget), 'text-primary', true);
+            math += row('Terpakai hari ini', 'Di luar tagihan recurring & transaksi non-budget', `-${this._rp(s.spentToday)}`, 'text-danger');
+            math += row(s.left < 0 ? 'Over budget' : 'Sisa hari ini', `Sampai gajian masih ~${this._rp(s.cycleLeft)}`, this._rp(s.left), s.left < 0 ? 'text-danger' : 'text-success', true);
+        } else {
+            math = `<p class="text-xs text-gray-400 py-3 text-center">Isi pemasukan bulanan di bawah buat mulai ngitung 🐷</p>`;
+        }
+
+        // Last 7 days vs base
+        const days = [];
+        for (let i = 6; i >= 0; i--) {
+            const d = new Date(c.today.getFullYear(), c.today.getMonth(), c.today.getDate() - i);
+            const ds = this.toLocalDateString(d);
+            const spent = allTransactions.filter(tx => tx.dateStr === ds && this._isDailySpend(tx)).reduce((sum, tx) => sum + tx.amount, 0);
+            days.push({ d, spent, isToday: i === 0 });
+        }
+        const maxV = Math.max(s.base, ...days.map(d => d.spent), 1);
+        const bars = days.map(day => {
+            const h = Math.max(4, Math.round((day.spent / maxV) * 100));
+            const over = s.base > 0 && day.spent > s.base;
+            const color = over ? '#EF4444' : (day.isToday ? '#FFB800' : '#1CBDB3');
+            return `
+                <div class="flex-1 flex flex-col items-center gap-1 min-w-0">
+                    <span class="text-[8px] font-bold text-gray-400">${day.spent > 0 ? this._rpShort(day.spent) : '–'}</span>
+                    <div class="w-full h-20 flex items-end"><div class="today-weekbar w-full rounded-lg" style="height:${h}%;background:${color}"></div></div>
+                    <span class="text-[9px] font-bold ${day.isToday ? 'text-primary' : 'text-gray-400'}">${day.d.toLocaleDateString('id-ID', { weekday: 'short' }).slice(0, 3)}</span>
+                </div>`;
+        }).join('');
+        const baseLine = s.base > 0 ? `<div class="absolute left-0 right-0 border-t-2 border-dashed border-primary/20 pointer-events-none" style="bottom:${Math.round((s.base / maxV) * 80) + 16}px"></div>` : '';
+
+        const billRows = s.bills.length ? s.bills.slice(0, 6).map(b => {
+            const def = this.getCategoryDef(b.category);
+            return `
+                <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-xl flex items-center justify-center shrink-0" style="background:${def.color}15;color:${def.color}"><i class="ph-fill ${def.icon} text-sm"></i></div>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-xs font-bold text-primary truncate">${b.name}</p>
+                        <p class="text-[10px] text-gray-400">${this._rp(b.amount)} · ${{ monthly: 'bulanan', weekly: 'mingguan', yearly: 'tahunan', daily: 'harian' }[b.frequency] || b.frequency}</p>
+                    </div>
+                    <span class="text-xs font-bold text-danger shrink-0">${this._rpShort(b.perDay)}/hari</span>
+                </div>`;
+        }).join('') + (s.bills.length > 6 ? `<p class="text-[10px] text-gray-400 text-center">+${s.bills.length - 6} lainnya</p>` : '')
+            : `<p class="text-[11px] text-gray-400">Belum ada tagihan/langganan recurring.</p>`;
+
+        content.innerHTML = `
+            <div class="rounded-2xl bg-primary text-white p-4 space-y-1.5">
+                ${this._todayTaglines.map((t, i) => `<p class="text-[11px] leading-snug ${i === 0 ? 'font-bold' : 'text-white/70'}"><i class="ph-fill ${['ph-calendar-check', 'ph-arrow-bend-down-right', 'ph-lightning'][i]} text-secondary mr-1"></i>${t}</p>`).join('')}
+            </div>
+
+            <div class="bg-gray-50 rounded-2xl px-4 py-2">${math}</div>
+
+            <div class="bg-gray-50 rounded-2xl p-4">
+                <p class="text-[10px] uppercase tracking-[0.15em] text-gray-400 font-bold mb-3">7 hari terakhir vs jatah harian</p>
+                <div class="relative flex items-end gap-1.5">${baseLine}${bars}</div>
+            </div>
+
+            <div class="bg-gray-50 rounded-2xl p-4 space-y-3">
+                <div class="flex items-center justify-between">
+                    <p class="text-[10px] uppercase tracking-[0.15em] text-gray-400 font-bold">Tagihan dibagi per hari</p>
+                    <button onclick="app.closeSettingsSheet('todayBreakdownSheet'); app.switchTab('transactions'); setTimeout(() => app.openRecurringModal(), 200)" class="text-[10px] font-bold text-tertiary uppercase">Kelola</button>
+                </div>
+                ${billRows}
+            </div>
+
+            <div class="bg-gray-50 rounded-2xl p-4 space-y-3">
+                <p class="text-[10px] uppercase tracking-[0.15em] text-gray-400 font-bold">Pengaturan Day Mode</p>
+                <label class="block">
+                    <span class="text-[10px] font-bold text-gray-400 uppercase">Pemasukan bulanan</span>
+                    <div class="mt-1 bg-white rounded-xl px-3 py-2.5 flex items-center gap-2 border border-gray-100">
+                        <span class="text-sm font-bold text-gray-400">Rp</span>
+                        <input type="number" id="todayIncomeInput" inputmode="numeric" value="${s.plannedIncome || ''}" placeholder="5500000" class="flex-1 min-w-0 bg-transparent text-base font-bold font-heading text-primary outline-none">
+                    </div>
+                </label>
+                <label class="block">
+                    <span class="text-[10px] font-bold text-gray-400 uppercase">Tanggal gajian (awal siklus)</span>
+                    <div class="mt-1 bg-white rounded-xl px-3 py-2.5 flex items-center gap-2 border border-gray-100">
+                        <i class="ph-fill ph-calendar-check text-indigo-400"></i>
+                        <input type="number" id="todayPaydayInput" inputmode="numeric" min="1" max="31" value="${currentProfile.paydayDate || 25}" class="flex-1 min-w-0 bg-transparent text-base font-bold font-heading text-primary outline-none">
+                    </div>
+                </label>
+                <button onclick="app.saveDayModeSettings()" class="w-full bg-secondary text-primary font-bold py-3 rounded-2xl shadow-sm active:scale-95 transition flex items-center justify-center gap-2 text-sm">
+                    <i class="ph-bold ph-check"></i> Simpan
+                </button>
+            </div>`;
+    },
+
+    saveDayModeSettings: async function() {
+        const income = parseInt(document.getElementById('todayIncomeInput')?.value, 10);
+        const payday = parseInt(document.getElementById('todayPaydayInput')?.value, 10);
+        if (!income || income <= 0) return this.toast('Pemasukan bulanan tidak valid', true);
+        if (!payday || payday < 1 || payday > 31) return this.toast('Tanggal gajian tidak valid', true);
+        try {
+            await db.collection('users').doc(currentUser.uid).update({ monthlyIncome: income, paydayDate: payday });
+            currentProfile.monthlyIncome = income;
+            currentProfile.paydayDate = payday;
+            this._todayIntro = true;
+            this.renderToday();
+            this.renderTodayBreakdown();
+            this.toast('Day Mode disimpan! 🐷');
         } catch(e) { this.toast(e.message, true); }
     },
 
@@ -5016,17 +5511,19 @@ window.app = {
 
     // UI Tab & Modes
     switchTab: function(tab) {
+        if (tab === 'home' && this.getHomeMode() === 'day') tab = 'today';
         SFX.page();
         this.setActiveTabDisplay(tab);
+        this._mountChat(tab === 'today' ? 'today' : 'input');
         document.querySelectorAll('.nav-btn').forEach(el => {
             el.classList.remove('text-primary');
             el.querySelector('i').classList.remove('scale-110');
         });
-        const btn = document.querySelector(`.nav-btn[data-tab="${tab}"]`);
+        const btn = document.querySelector(`.nav-btn[data-tab="${tab === 'today' ? 'home' : tab}"]`);
         if(btn) { btn.classList.add('text-primary'); btn.querySelector('i')?.classList.add('scale-110'); }
         
         const mainContainer = document.getElementById('mainContainer');
-        if (tab === 'input' || tab === 'transactions') {
+        if (tab === 'input' || tab === 'transactions' || tab === 'today') {
             mainContainer.classList.remove('p-5', 'pb-32', 'overflow-y-auto');
             mainContainer.classList.add('overflow-hidden', 'flex', 'flex-col', 'min-h-0');
             if (tab === 'input') setTimeout(() => {
@@ -5039,6 +5536,8 @@ window.app = {
         }
 
         if (tab === 'home') this.renderHome();
+        if (tab === 'today') this.showToday();
+        else this._stopTodayTagline();
         if (tab === 'transactions') this.renderTransactions();
         if (tab === 'report') this.renderReport();
         if (tab === 'settings') {
@@ -5495,6 +5994,12 @@ window.app = {
             return;
         }
 
+        // ── TODAY'S BUDGET (Day Mode) ────────────────────────────────────────
+        if (/^(budget|sisa( budget)?|jatah)( hari ini| harian| today)$|^today('?s)? budget$/i.test(text.trim())) {
+            this.addChatBubble(this.todaySummaryText(), 'bot', true);
+            return;
+        }
+
         // ── LOCAL TRANSFER PARSE (no token used) ─────────────────────────────
         const localTransfer = !chatAiMode && this._tryLocalTransfer(text);
         if (localTransfer) {
@@ -5920,6 +6425,7 @@ window.app = {
             this.clearPendingTransactionPanel();
             await this.loadData();
             this.revokeNoSpendIfNeeded();
+            if (this._isTodayActive()) this.addChatBubble(this.todaySummaryText(), 'bot', true);
         } catch(e) {
             this.addChatBubble('❌ Gagal menyimpan: ' + e.message, 'bot');
         }
@@ -6010,7 +6516,7 @@ window.app = {
 
             // Apply highlights to content
             let processed = content;
-            processed = processed.replace(/(Rp\s?[\d.,]+(?:\s?(?:juta|ribu|rb|k))?)/gi, '<span class="chat-money">$1</span>');
+            processed = processed.replace(/(Rp\s?\d(?:[\d.,]*\d)?(?:\s?(?:juta|ribu|rb|k)\b)?)/gi, '<span class="chat-money">$1</span>');
             processed = processed.replace(/([\d.,]+\s?%)/g, '<span class="chat-pct">$1</span>');
 
             const contentDiv = document.createElement('div');
@@ -7346,6 +7852,8 @@ Output STRICTLY JSON murni (tanpa markdown block). Format:
         
         try {
             const snapshot = await db.collection('users').doc(currentUser.uid).collection('recurring_transactions').orderBy('createdAt', 'desc').get();
+            this._recurringCache = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+            this.renderToday();
             if (snapshot.empty) {
                 listEl.innerHTML = `
                     <div class="flex flex-col items-center justify-center text-center mt-20 opacity-60">
@@ -7641,6 +8149,8 @@ Output STRICTLY JSON murni (tanpa markdown block). Format:
         
         try {
             const snapshot = await db.collection('users').doc(currentUser.uid).collection('recurring_transactions').get();
+            this._recurringCache = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+            this.renderToday();
             if (snapshot.empty) {
                 card.classList.add('hidden');
                 return;
@@ -8196,5 +8706,12 @@ document.addEventListener('click', function(e) {
 }, true); // Use capture phase to ensure it fires first
 
 document.getElementById('chatInput')?.addEventListener('keydown', e => { if(e.key === 'Enter') app.submitChat(); });
+// Day Mode: shrink the budget hero while typing so the chat keeps room above the keyboard
+document.getElementById('chatInput')?.addEventListener('focus', () => {
+    if (app._isTodayActive()) document.getElementById('todayHero')?.classList.add('is-compact');
+});
+document.getElementById('chatInput')?.addEventListener('blur', () => {
+    setTimeout(() => document.getElementById('todayHero')?.classList.remove('is-compact'), 150);
+});
 
 app.init();

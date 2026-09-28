@@ -75,6 +75,53 @@
         .prompt-chip { display: inline-flex; align-items: center; gap: 4px; padding: 6px 13px; background: white; border: 1.5px solid #e5e7eb; border-radius: 999px; font-size: 11px; font-weight: 600; color: #040720; cursor: pointer; transition: all 0.15s; white-space: nowrap; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
         .prompt-chip:hover { background: #040720; color: white; border-color: #040720; transform: translateY(-1px); }
         .prompt-chip:active { transform: scale(0.96); }
+
+        /* ── Day Mode: Today's Budget ── */
+        .today-hero { --fill: #1CBDB3; --fill-2: #10B981; transition: padding .3s ease; }
+        .today-hero[data-state="mid"] { --fill: #FFB800; --fill-2: #F59E0B; }
+        .today-hero[data-state="low"], .today-hero[data-state="over"] { --fill: #EF4444; --fill-2: #F97316; }
+        .today-hero[data-state="setup"], .today-hero[data-state="loading"] { --fill: #64748B; --fill-2: #475569; }
+        .today-visual { width: 112px; height: 96px; transition: width .35s ease, height .35s ease; }
+        .today-visual svg { width: 100%; height: 100%; overflow: visible; }
+        .today-hero.is-compact .today-visual { width: 56px; height: 48px; }
+        .today-hero.is-compact .today-amount { font-size: 22px; }
+        .today-collapsible { max-height: 170px; opacity: 1; overflow: hidden; transition: max-height .35s ease, opacity .25s ease, margin .35s ease; }
+        .today-hero.is-compact .today-collapsible { max-height: 0; opacity: 0; margin-top: 0; }
+        .piggy-level, .battery-level { transition: transform 1.4s cubic-bezier(.22,1,.36,1); }
+        .battery-level { transform-box: fill-box; transform-origin: left center; }
+        .piggy-wave { animation: piggyWave 2.4s linear infinite; }
+        .piggy-wave.back { animation-duration: 3.8s; animation-direction: reverse; opacity: .5; }
+        .piggy-body { animation: piggyBob 3s ease-in-out infinite; transform-box: fill-box; transform-origin: 50% 90%; }
+        .today-hero[data-state="low"] .piggy-body, .today-hero[data-state="over"] .piggy-body { animation: piggyShake .7s ease-in-out infinite; }
+        .today-hero[data-state="low"] .battery-level, .today-hero[data-state="over"] .battery-level { animation: batteryBlink 1.1s ease-in-out infinite; }
+        .piggy-eye-sad, .piggy-sweat { display: none; }
+        .today-hero[data-state="over"] .piggy-eye-open { display: none; }
+        .today-hero[data-state="over"] .piggy-eye-sad { display: inline; }
+        .today-hero[data-state="low"] .piggy-sweat, .today-hero[data-state="over"] .piggy-sweat { display: inline; animation: piggySweat 1.6s ease-in infinite; }
+        .today-hero:not([data-charging="1"]) #batteryBolt { display: none; }
+        #batteryBolt { animation: batteryBlink 1.6s ease-in-out infinite; }
+        @keyframes piggyWave { from { transform: translateX(0); } to { transform: translateX(-60px); } }
+        @keyframes piggyBob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+        @keyframes piggyShake { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-3deg); } 75% { transform: rotate(3deg); } }
+        @keyframes piggySweat { 0% { transform: translateY(0); opacity: 0; } 30% { opacity: 1; } 100% { transform: translateY(10px); opacity: 0; } }
+        @keyframes batteryBlink { 50% { opacity: .35; } }
+        .today-coin { position: absolute; width: 16px; height: 16px; margin-left: -8px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #FFE58A, #FFB800 60%, #C98B00); box-shadow: inset 0 0 0 2px rgba(255,255,255,.3), 0 2px 6px rgba(0,0,0,.25); pointer-events: none; opacity: 0; }
+        .today-coin.out { animation: coinOut 1s cubic-bezier(.3,.7,.4,1) forwards; }
+        .today-coin.in { animation: coinIn .8s cubic-bezier(.5,0,.75,0) forwards; }
+        @keyframes coinOut { 0% { transform: translate(0,0) scale(.5); opacity: 0; } 15% { opacity: 1; } 55% { transform: translate(var(--dx), -44px) scale(1) rotate(180deg); opacity: 1; } 100% { transform: translate(calc(var(--dx) * 1.6), 14px) scale(.8) rotate(320deg); opacity: 0; } }
+        @keyframes coinIn { 0% { transform: translate(var(--dx), -48px) scale(1); opacity: 0; } 25% { opacity: 1; } 100% { transform: translate(0,0) scale(.4); opacity: 0; } }
+        .today-delta { position: absolute; left: 50%; top: 28%; transform: translateX(-50%); font-family: 'Poppins', sans-serif; font-weight: 800; font-size: 12px; white-space: nowrap; pointer-events: none; animation: deltaFloat 1.6s ease-out forwards; text-shadow: 0 2px 8px rgba(0,0,0,.35); }
+        @keyframes deltaFloat { 0% { transform: translate(-50%, 0); opacity: 0; } 15% { opacity: 1; } 100% { transform: translate(-50%, -34px); opacity: 0; } }
+        .today-tagline { transition: opacity .4s ease, transform .4s ease; }
+        .today-tagline.is-out { opacity: 0; transform: translateY(4px); }
+        .today-glow { animation: todayGlow 6s ease-in-out infinite; }
+        @keyframes todayGlow { 50% { transform: scale(1.18); opacity: .7; } }
+        .today-bar-fill { background: linear-gradient(90deg, var(--fill-2), var(--fill)); transition: width 1.2s cubic-bezier(.22,1,.36,1); }
+        .today-chip { flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 999px; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.1); font-size: 10px; font-weight: 700; white-space: nowrap; }
+        .today-weekbar { transition: height .9s cubic-bezier(.22,1,.36,1); }
+        @media (prefers-reduced-motion: reduce) {
+            .piggy-wave, .piggy-body, .today-glow, .battery-level, .piggy-sweat, #batteryBolt { animation: none !important; }
+        }
     </style>
 </head>
 
@@ -294,6 +341,9 @@
                                 <h1 class="font-bold text-sm tracking-wide leading-tight">Dirhamku</h1>
                             </div>
                         </div>
+                        <button onclick="app.setHomeMode('day')" class="ml-auto mr-2 flex items-center gap-1 bg-secondary text-primary rounded-full px-2.5 py-1.5 text-[10px] font-bold shadow-sm shadow-yellow-900/30 active:scale-95 transition" title="Day Mode: budget harian">
+                            <i class="ph-fill ph-sun text-xs"></i> Day
+                        </button>
                         <div class="flex items-center gap-1 bg-white/10 rounded-full border border-white/10 backdrop-blur-md p-1">
                             <button onclick="app.navigateMonth(-1)" class="w-7 h-7 rounded-full hover:bg-white/20 flex items-center justify-center transition active:scale-90"><i class="ph-bold ph-caret-left text-xs"></i></button>
                             <span id="homeMonthLabel" class="text-xs font-bold px-2 whitespace-nowrap">Apr 2026</span>
@@ -506,6 +556,112 @@
                         <div id="homeRecentList" class="space-y-3"></div>
                     </div>
                 </div>
+            </div>
+
+            <!-- ====== TAB: TODAY (Day Mode) ====== -->
+            <div id="tab-today" class="hidden flex-col h-full min-h-0 bg-[#E2E8F0] relative overflow-hidden">
+                <div id="todayHero" data-state="loading" class="today-hero bg-primary text-white px-5 pt-5 pb-4 rounded-b-[28px] relative shrink-0 overflow-hidden z-10 shadow-[0_10px_30px_rgba(4,7,32,0.25)]">
+                    <div class="absolute -top-16 -right-10 w-48 h-48 rounded-full bg-tertiary/20 blur-2xl today-glow pointer-events-none"></div>
+                    <div class="absolute -bottom-20 -left-12 w-44 h-44 rounded-full bg-secondary/10 blur-2xl today-glow pointer-events-none" style="animation-delay:-3s"></div>
+
+                    <div class="flex justify-between items-center relative z-10">
+                        <div class="min-w-0">
+                            <p class="text-[10px] text-tertiary uppercase tracking-wider font-semibold opacity-80">Today's Budget</p>
+                            <h1 id="todayDateLabel" class="font-bold text-sm tracking-wide leading-tight truncate">Hari ini</h1>
+                        </div>
+                        <div class="flex items-center gap-2 shrink-0">
+                            <div class="flex items-center bg-white/10 rounded-full border border-white/10 p-1">
+                                <button class="px-2.5 py-1 rounded-full text-[10px] font-bold bg-secondary text-primary flex items-center gap-1"><i class="ph-fill ph-sun"></i> Day</button>
+                                <button onclick="app.setHomeMode('month')" class="px-2.5 py-1 rounded-full text-[10px] font-bold text-white/60 active:scale-95 transition">Month</button>
+                            </div>
+                            <button onclick="app.openTodayBreakdown()" class="w-8 h-8 rounded-full bg-white/10 border border-white/10 flex items-center justify-center active:scale-90 transition" title="Hitungan & pengaturan">
+                                <i class="ph-bold ph-sliders-horizontal text-sm"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-4 mt-4 relative z-10">
+                        <button type="button" id="todayVisualWrap" onclick="app.toggleTodayVisual()" class="today-visual relative shrink-0 active:scale-95 transition-transform" title="Ganti celengan / baterai">
+                            <!-- Piggy bank -->
+                            <svg id="todayPiggy" viewBox="0 0 120 100" aria-hidden="true">
+                                <defs>
+                                    <clipPath id="piggyClip">
+                                        <ellipse cx="56" cy="54" rx="42" ry="30"/>
+                                        <path d="M68 32 L77 12 L90 31 Z"/>
+                                        <ellipse cx="98" cy="58" rx="11" ry="10"/>
+                                    </clipPath>
+                                    <linearGradient id="todayFillGrad" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="0%" style="stop-color:var(--fill)"/>
+                                        <stop offset="100%" style="stop-color:var(--fill-2)"/>
+                                    </linearGradient>
+                                </defs>
+                                <g class="piggy-body">
+                                    <path d="M15 50 q-9 -2 -7 -10 q2 -6 7 -2" fill="none" stroke="rgba(255,255,255,.75)" stroke-width="3" stroke-linecap="round"/>
+                                    <rect x="30" y="74" width="12" height="18" rx="4" fill="rgba(255,255,255,.12)" stroke="rgba(255,255,255,.75)" stroke-width="2.5"/>
+                                    <rect x="66" y="74" width="12" height="18" rx="4" fill="rgba(255,255,255,.12)" stroke="rgba(255,255,255,.75)" stroke-width="2.5"/>
+                                    <g clip-path="url(#piggyClip)">
+                                        <rect x="0" y="0" width="120" height="100" fill="rgba(255,255,255,.08)"/>
+                                        <g id="piggyLevel" class="piggy-level" style="transform:translateY(90px)">
+                                            <g class="piggy-wave back"><path d="M0 2 Q7.5 -3 15 2 T30 2 T45 2 T60 2 T75 2 T90 2 T105 2 T120 2 T135 2 T150 2 T165 2 T180 2 V110 H0 Z" fill="url(#todayFillGrad)"/></g>
+                                            <g class="piggy-wave"><path d="M0 0 Q7.5 -4 15 0 T30 0 T45 0 T60 0 T75 0 T90 0 T105 0 T120 0 T135 0 T150 0 T165 0 T180 0 V110 H0 Z" fill="url(#todayFillGrad)"/></g>
+                                            <circle cx="36" cy="14" r="4" fill="rgba(255,255,255,.28)"/>
+                                            <circle cx="58" cy="22" r="5" fill="rgba(255,255,255,.22)"/>
+                                            <circle cx="78" cy="12" r="3.5" fill="rgba(255,255,255,.28)"/>
+                                            <circle cx="47" cy="34" r="4" fill="rgba(255,255,255,.18)"/>
+                                        </g>
+                                    </g>
+                                    <ellipse cx="56" cy="54" rx="42" ry="30" fill="none" stroke="rgba(255,255,255,.85)" stroke-width="3"/>
+                                    <path d="M68 32 L77 12 L90 31" fill="none" stroke="rgba(255,255,255,.85)" stroke-width="3" stroke-linejoin="round"/>
+                                    <ellipse cx="98" cy="58" rx="11" ry="10" fill="rgba(4,7,32,.35)" stroke="rgba(255,255,255,.85)" stroke-width="3"/>
+                                    <ellipse cx="95" cy="58" rx="1.8" ry="2.6" fill="#fff"/>
+                                    <ellipse cx="101" cy="58" rx="1.8" ry="2.6" fill="#fff"/>
+                                    <rect x="44" y="21" width="22" height="5" rx="2.5" fill="#040720" stroke="rgba(255,255,255,.85)" stroke-width="2"/>
+                                    <circle class="piggy-eye-open" cx="80" cy="45" r="3.2" fill="#fff"/>
+                                    <path class="piggy-eye-sad" d="M76 47 q4 -4 8 0" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>
+                                    <path class="piggy-sweat" d="M88 30 q-3 5 0 7 q3 -2 0 -7 Z" fill="#7DD3FC"/>
+                                </g>
+                            </svg>
+                            <!-- Battery -->
+                            <svg id="todayBattery" class="hidden" viewBox="0 0 120 100" aria-hidden="true">
+                                <defs>
+                                    <clipPath id="batteryClip"><rect x="12" y="30" width="84" height="40" rx="7"/></clipPath>
+                                    <linearGradient id="todayFillGradB" x1="0" y1="0" x2="1" y2="0">
+                                        <stop offset="0%" style="stop-color:var(--fill-2)"/>
+                                        <stop offset="100%" style="stop-color:var(--fill)"/>
+                                    </linearGradient>
+                                </defs>
+                                <rect x="6" y="24" width="96" height="52" rx="12" fill="rgba(255,255,255,.08)" stroke="rgba(255,255,255,.85)" stroke-width="3"/>
+                                <rect x="104" y="40" width="8" height="20" rx="3" fill="rgba(255,255,255,.85)"/>
+                                <g clip-path="url(#batteryClip)">
+                                    <rect id="batteryLevel" class="battery-level" x="12" y="30" width="84" height="40" fill="url(#todayFillGradB)" style="transform:scaleX(0)"/>
+                                </g>
+                                <line x1="33" y1="30" x2="33" y2="70" stroke="#040720" stroke-width="3"/>
+                                <line x1="54" y1="30" x2="54" y2="70" stroke="#040720" stroke-width="3"/>
+                                <line x1="75" y1="30" x2="75" y2="70" stroke="#040720" stroke-width="3"/>
+                                <path id="batteryBolt" d="M58 32 L46 52 H55 L51 68 L66 46 H57 Z" fill="#fff" stroke="#040720" stroke-width="1.5" stroke-linejoin="round"/>
+                            </svg>
+                            <div id="todayFx" class="absolute inset-0 pointer-events-none"></div>
+                        </button>
+                        <div class="flex-1 min-w-0">
+                            <p id="todayLeftLabel" class="text-[10px] text-gray-300 font-semibold uppercase tracking-wider">Sisa hari ini</p>
+                            <h2 id="todayLeftAmount" class="today-amount text-[28px] leading-tight font-bold font-heading tracking-tight truncate transition-all">Rp —</h2>
+                            <p id="todayOfLabel" class="text-[11px] text-white/60 font-medium truncate">Menghitung budget...</p>
+                            <div class="w-full h-1.5 bg-white/10 rounded-full overflow-hidden mt-2">
+                                <div id="todayBar" class="today-bar-fill h-full rounded-full" style="width:0%"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="today-collapsible mt-3 relative z-10">
+                        <div id="todayChips" class="flex gap-2 overflow-x-auto no-scrollbar"></div>
+                        <button type="button" onclick="app.openTodayBreakdown()" class="mt-3 w-full text-left flex items-start gap-2 active:opacity-70 transition">
+                            <i id="todayTaglineIcon" class="ph-fill ph-sparkle text-secondary text-sm mt-px shrink-0"></i>
+                            <p id="todayTagline" class="today-tagline text-[11px] text-white/70 leading-snug">We spread your bills out daily, just like your income. What's left is yours to spend.</p>
+                        </button>
+                    </div>
+                </div>
+                <!-- Chat (moved here from the Input tab while Day Mode is open) -->
+                <div id="todayChatSlot" class="flex-1 min-h-0 flex flex-col"></div>
             </div>
 
             <!-- ====== TAB: TRANSACTIONS ====== -->
@@ -1668,6 +1824,21 @@
                         SIMPAN NAMA
                     </button>
                 </div>
+            </div>
+        </div>
+
+        <!-- ====== SHEET: DAY MODE BREAKDOWN ====== -->
+        <div id="todayBreakdownSheet" class="absolute inset-0 z-[95] bg-black/40 backdrop-blur-sm hidden flex-col justify-end" onclick="if(event.target===this)app.closeSettingsSheet('todayBreakdownSheet')">
+            <div class="bg-white w-full max-h-[90%] rounded-t-[30px] shadow-2xl flex flex-col pt-2 animate-fade-in">
+                <div class="w-12 h-1.5 bg-gray-300 rounded-full mx-auto mb-3 shrink-0"></div>
+                <div class="px-5 flex justify-between items-center mb-2 shrink-0">
+                    <div>
+                        <h2 class="font-bold text-lg text-primary font-heading">Hitungan Budget Harian</h2>
+                        <p id="todayBreakdownCycle" class="text-xs text-gray-400">—</p>
+                    </div>
+                    <button onclick="app.closeSettingsSheet('todayBreakdownSheet')" class="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full text-gray-500 active:scale-95 transition"><i class="ph-bold ph-x text-sm"></i></button>
+                </div>
+                <div id="todayBreakdownContent" class="px-5 pb-10 pt-2 overflow-y-auto no-scrollbar space-y-4"></div>
             </div>
         </div>
 
