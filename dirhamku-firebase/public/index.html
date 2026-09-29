@@ -116,6 +116,9 @@
         .today-glow { animation: todayGlow 6s ease-in-out infinite; }
         @keyframes todayGlow { 50% { transform: scale(1.18); opacity: .7; } }
         .today-bar-fill { background: linear-gradient(90deg, var(--fill-2), var(--fill)); transition: width 1.2s cubic-bezier(.22,1,.36,1); }
+        .today-trend-up { background: rgba(16,185,129,.18); color: #6EE7B7; }
+        .today-trend-down { background: rgba(239,68,68,.2); color: #FCA5A5; }
+        .mini-fill { transition: transform 1.2s cubic-bezier(.22,1,.36,1); }
         .today-chip { flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 999px; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.1); font-size: 10px; font-weight: 700; white-space: nowrap; }
         .today-weekbar { transition: height .9s cubic-bezier(.22,1,.36,1); }
         @media (prefers-reduced-motion: reduce) {
@@ -376,6 +379,41 @@
                             <div><p class="text-[10px] uppercase font-bold text-gray-400">Expense</p><p id="homeExpense" class="font-bold text-primary text-sm">Rp 0</p></div>
                         </div>
                     </div>
+
+                    <!-- Today's Budget mini (opens Day Mode) -->
+                    <button type="button" id="cardTodayMini" data-state="loading" onclick="app.setHomeMode('day')" class="today-hero w-full text-left bg-primary text-white rounded-3xl p-4 relative overflow-hidden shadow-sm active:scale-[0.99] transition block">
+                        <div class="absolute -top-12 -right-10 w-36 h-36 rounded-full bg-tertiary/20 blur-2xl pointer-events-none"></div>
+                        <div class="absolute -bottom-14 -left-10 w-32 h-32 rounded-full bg-secondary/10 blur-2xl pointer-events-none"></div>
+                        <div class="flex items-center gap-3 relative z-10">
+                            <svg viewBox="20 4 80 92" class="w-11 h-12 shrink-0" aria-hidden="true">
+                                <defs>
+                                    <clipPath id="miniJarClip"><path d="M41 17 V22 C41 26 25 28 25 40 V84 Q25 93 34 93 H86 Q95 93 95 84 V40 C95 28 79 26 79 22 V17 Z"/></clipPath>
+                                    <radialGradient id="miniGold" cx="32%" cy="28%" r="80%">
+                                        <stop offset="0%" stop-color="#FFF6C4"/><stop offset="40%" stop-color="#F8CD4F"/><stop offset="80%" stop-color="#D9A21E"/><stop offset="100%" stop-color="#A8740A"/>
+                                    </radialGradient>
+                                    <pattern id="miniCoins" width="11" height="6.5" patternUnits="userSpaceOnUse">
+                                        <ellipse cx="5.5" cy="3.2" rx="5.2" ry="2.7" fill="url(#miniGold)" stroke="#946408" stroke-width=".7"/>
+                                    </pattern>
+                                </defs>
+                                <g clip-path="url(#miniJarClip)">
+                                    <rect x="20" y="4" width="80" height="92" fill="rgba(255,255,255,.08)"/>
+                                    <rect id="miniJarFill" class="mini-fill" x="20" y="26" width="80" height="72" fill="url(#miniCoins)" style="transform:translateY(74px)"/>
+                                </g>
+                                <path d="M41 17 V22 C41 26 25 28 25 40 V84 Q25 93 34 93 H86 Q95 93 95 84 V40 C95 28 79 26 79 22 V17" fill="none" stroke="rgba(255,255,255,.85)" stroke-width="4" stroke-linejoin="round"/>
+                                <rect x="36" y="7" width="48" height="11" rx="3.5" fill="#FFB800" stroke="rgba(255,255,255,.85)" stroke-width="3"/>
+                            </svg>
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center gap-2">
+                                    <p class="text-[9px] uppercase tracking-widest text-tertiary font-bold">Today's Budget</p>
+                                    <span id="miniTrend" class="hidden items-center gap-0.5 rounded-full px-1.5 py-px text-[9px] font-bold"></span>
+                                </div>
+                                <p id="miniLeft" class="text-xl font-bold font-heading leading-tight truncate">Rp —</p>
+                                <p id="miniSub" class="text-[10px] text-white/60 font-medium truncate">Menghitung...</p>
+                                <div class="w-full h-1.5 bg-white/10 rounded-full overflow-hidden mt-2"><div id="miniBar" class="today-bar-fill h-full rounded-full" style="width:0%"></div></div>
+                            </div>
+                            <i class="ph-bold ph-caret-right text-white/40 shrink-0"></i>
+                        </div>
+                    </button>
 
                     <!-- Payday Countdown Card -->
                     <div id="cardPayday" class="bg-gradient-to-br from-indigo-50 to-white rounded-3xl p-5 border border-indigo-50/50 shadow-sm overflow-hidden relative">
@@ -656,7 +694,10 @@
                             <div id="todayFx" class="absolute inset-0 pointer-events-none"></div>
                         </button>
                         <div class="flex-1 min-w-0">
-                            <p id="todayLeftLabel" class="text-[10px] text-gray-300 font-semibold uppercase tracking-wider">Sisa hari ini</p>
+                            <div class="flex items-center justify-between gap-2">
+                                <p id="todayLeftLabel" class="text-[10px] text-gray-300 font-semibold uppercase tracking-wider truncate">Sisa hari ini</p>
+                                <button type="button" id="todayTrend" onclick="app.openTodayBreakdown('why')" class="hidden shrink-0 items-center gap-0.5 rounded-full px-2 py-0.5 text-[10px] font-bold active:scale-95 transition"></button>
+                            </div>
                             <h2 id="todayLeftAmount" class="today-amount text-[28px] leading-tight font-bold font-heading tracking-tight truncate transition-all">Rp —</h2>
                             <p id="todayOfLabel" class="text-[11px] text-white/60 font-medium truncate">Menghitung budget...</p>
                             <div class="w-full h-1.5 bg-white/10 rounded-full overflow-hidden mt-2">

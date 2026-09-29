@@ -1697,6 +1697,7 @@ window.app = {
 
     // ── Dashboard Settings ──────────────────────────────────────────────────
     _dashboardCardDefs: [
+        { id: 'cardTodayMini', label: "Today's Budget", desc: 'Ringkasan sisa budget hari ini (buka Day Mode)', icon: 'ph-coins', hex: '#F59E0B' },
         { id: 'cardPerformance', label: 'Performance Card', desc: 'Saving rate & performa bulanan', icon: 'ph-gauge', hex: '#FFB800' },
         { id: 'cardStatus', label: 'Status Card', desc: 'Progres budget & grafik harian', icon: 'ph-wallet', hex: '#1CBDB3' },
         { id: 'cardTopTransactions', label: 'Top Spending', desc: 'Top spending & polar chart kategori', icon: 'ph-flame', hex: '#EF4444' },
@@ -1718,7 +1719,7 @@ window.app = {
                 const savedIds = prefs.order || [];
                 // Add any new cards not in saved order
                 const mergedOrder = [...savedIds.filter(id => defaultIds.includes(id))];
-                defaultIds.forEach(id => { if (!mergedOrder.includes(id)) mergedOrder.push(id); });
+                defaultIds.forEach(id => { if (!mergedOrder.includes(id)) { if (id === 'cardTodayMini') mergedOrder.unshift(id); else mergedOrder.push(id); } });
                 return {
                     order: mergedOrder,
                     visibility: { ...Object.fromEntries(defaultIds.map(id => [id, true])), ...(prefs.visibility || {}) }
@@ -2076,12 +2077,15 @@ window.app = {
         const showPayday = prefs.visibility.cardPayday !== false;
         const showNoSpend = prefs.visibility.cardNoSpend !== false;
         const showRecent = prefs.visibility.cardRecentTransactions !== false;
+        const showMini = prefs.visibility.cardTodayMini !== false;
 
         if (!showGenZ && this._homeTopCategoryChart) {
             this._homeTopCategoryChart.destroy();
             this._homeTopCategoryChart = null;
         }
 
+        const miniEl = document.getElementById('cardTodayMini');
+        if (miniEl) miniEl.style.display = showMini ? 'block' : 'none';
         document.getElementById('cardPerformance').style.display = showPerf ? 'block' : 'none';
         document.getElementById('cardStatus').style.display = showStatus ? 'block' : 'none';
         document.getElementById('cardTopTransactions').style.display = showGenZ ? 'block' : 'none';
@@ -2671,6 +2675,20 @@ window.app = {
 
         const incomeTotal = sumWhere(income, () => true);
         const savingsNet = sumWhere(savNet, () => true);
+        // Budget and spending for any day of the cycle (used by the 7-day history)
+        const dayInfo = (ds) => {
+            if (ds < c.startStr || ds > c.todayStr) return null;
+            const dl = c.overdue ? 7 : c.totalDays - this._dayDiff(c.start, this.parseLocalDateString(ds));
+            return { budget: poolFor(ds) / dl, spent: spend[ds] || 0 };
+        };
+        // Why today's budget moved vs yesterday: yesterday's leftover (or overspend) and money that arrived
+        // today are each spread over the days left.
+        const spentYesterday = spend[yesterdayStr] || 0;
+        const trendWhy = yesterdayBudget === null ? null : {
+            rollover: (yesterdayBudget - spentYesterday) / daysLeft,
+            arrived: ((income[c.todayStr] || 0) + (savNet[c.todayStr] || 0)) / daysLeft,
+            spentYesterday
+        };
         let state;
         if (this._recurringCache === null) state = 'loading';
         else if (incomeTotal <= 0) state = 'setup';
@@ -2684,6 +2702,7 @@ window.app = {
             spentBefore: sumWhere(spend, d => d < c.todayStr), spentToday, savingsNet,
             pool, daysLeft, todayBudget, yesterdayBudget, tomorrow, left, pct, state,
             trend: yesterdayBudget === null ? 0 : todayBudget - yesterdayBudget,
+            trendWhy, dayInfo,
             cycleLeft: pool - spentToday
         };
     },
@@ -2857,6 +2876,7 @@ window.app = {
         if (!hero || !currentProfile) return;
         const s = this.computeTodayBudget();
         this._todayState = s;
+        this._renderTodayMini(s);
         const active = this._isTodayActive();
 
         document.getElementById('todayDateLabel').textContent = s.cycle.today.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'short' });
@@ -2871,6 +2891,8 @@ window.app = {
         const taglineIcon = document.getElementById('todayTaglineIcon');
         const bar = document.getElementById('todayBar');
 
+        const _te = document.getElementById('todayTrend');
+        if (_te && (s.state === 'loading' || s.state === 'setup')) { _te.classList.add('hidden'); _te.classList.remove('inline-flex'); }
         if (s.state === 'loading') {
             amountEl.textContent = 'Rp —';
             ofEl.textContent = 'Menghitung budget...';
@@ -2908,11 +2930,20 @@ window.app = {
         this._todayIntro = false;
         this._todayLastLeft = s.left;
 
-        const trendChip = s.yesterdayBudget === null || Math.abs(s.trend) < 1
+        const hasTrend = s.yesterdayBudget !== null && Math.abs(s.trend) >= 1000;
+        const trendChip = !hasTrend
             ? `<span class="today-chip"><i class="ph-bold ph-calendar-blank"></i> Jatah ${this._rpShort(s.todayBudget)}/hari</span>`
             : s.trend > 0
-                ? `<span class="today-chip text-emerald-300"><i class="ph-bold ph-trend-up"></i> Jatah naik +${this._rpShort(s.trend)}</span>`
-                : `<span class="today-chip text-red-300"><i class="ph-bold ph-trend-down"></i> Jatah turun ${this._rpShort(Math.abs(s.trend))}</span>`;
+                ? `<button onclick="app.openTodayBreakdown('why')" class="today-chip text-emerald-300 active:scale-95 transition"><i class="ph-bold ph-trend-up"></i> Jatah naik ${this._rpShort(s.trend)} dari kemarin</button>`
+                : `<button onclick="app.openTodayBreakdown('why')" class="today-chip text-red-300 active:scale-95 transition"><i class="ph-bold ph-trend-down"></i> Jatah turun ${this._rpShort(Math.abs(s.trend))} dari kemarin</button>`;
+        const trendEl = document.getElementById('todayTrend');
+        if (trendEl) {
+            trendEl.classList.toggle('hidden', !hasTrend);
+            trendEl.classList.toggle('inline-flex', hasTrend);
+            trendEl.classList.toggle('today-trend-up', hasTrend && s.trend > 0);
+            trendEl.classList.toggle('today-trend-down', hasTrend && s.trend < 0);
+            if (hasTrend) trendEl.innerHTML = `<i class="ph-bold ${s.trend > 0 ? 'ph-arrow-up' : 'ph-arrow-down'}"></i>${this._rpShort(Math.abs(s.trend))}`;
+        }
         const tomorrowChip = s.cycle.overdue
             ? `<span class="today-chip text-amber-300"><i class="ph-bold ph-hourglass-medium"></i> Gaji belum masuk</span>`
             : s.tomorrow === null
@@ -2945,6 +2976,32 @@ window.app = {
         if (sheet && !sheet.classList.contains('hidden')) this.renderTodayBreakdown();
     },
 
+    // Compact Today's Budget card on the Home (Month) view
+    _renderTodayMini: function(s) {
+        const card = document.getElementById('cardTodayMini');
+        if (!card) return;
+        card.dataset.state = s.state;
+        const left = document.getElementById('miniLeft'), sub = document.getElementById('miniSub');
+        const bar = document.getElementById('miniBar'), fill = document.getElementById('miniJarFill'), tr = document.getElementById('miniTrend');
+        const setFill = pct => { if (fill) fill.style.transform = `translateY(${pct <= 0 ? 74 : Math.round((1 - pct) * 46)}px)`; };
+        const hasTrend = s.state !== 'loading' && s.state !== 'setup' && s.yesterdayBudget !== null && Math.abs(s.trend) >= 1000;
+        if (tr) {
+            tr.classList.toggle('hidden', !hasTrend);
+            tr.classList.toggle('inline-flex', hasTrend);
+            tr.classList.toggle('today-trend-up', hasTrend && s.trend > 0);
+            tr.classList.toggle('today-trend-down', hasTrend && s.trend < 0);
+            if (hasTrend) tr.innerHTML = `<i class="ph-bold ${s.trend > 0 ? 'ph-arrow-up' : 'ph-arrow-down'}"></i>${this._rpShort(Math.abs(s.trend))}`;
+        }
+        if (s.state === 'loading') { left.textContent = 'Rp —'; sub.textContent = 'Menghitung...'; bar.style.width = '0%'; setFill(0); return; }
+        if (s.state === 'setup') { left.textContent = 'Rp 0'; sub.textContent = 'Belum ada income siklus ini · tap buat mulai'; bar.style.width = '0%'; setFill(0); return; }
+        left.textContent = this._rp(s.left);
+        sub.textContent = s.left < 0
+            ? `over dari jatah ${this._rp(s.todayBudget)} · ${s.cycle.overdue ? 'gaji belum masuk' : s.daysLeft + ' hari ke gajian'}`
+            : `dari jatah ${this._rp(s.todayBudget)} · ${s.cycle.overdue ? 'gaji belum masuk' : s.daysLeft + ' hari ke gajian'}`;
+        bar.style.width = `${Math.round(s.pct * 100)}%`;
+        setFill(s.pct);
+    },
+
     prefillChat: function(text) {
         const input = document.getElementById('chatInput');
         if (!input) return;
@@ -2969,9 +3026,28 @@ window.app = {
         return `🫙 Sisa hari ini <b>${this._rp(s.left)}</b> dari jatah ${this._rp(s.todayBudget)}. ${next}`;
     },
 
-    openTodayBreakdown: function() {
+    _todayDaySel: null,
+
+    openTodayBreakdown: function(focus) {
+        this._todayDaySel = null;
         this.renderTodayBreakdown();
         this.openSettingsSheet('todayBreakdownSheet');
+        const box = document.getElementById('todayBreakdownContent');
+        if (box) box.scrollTop = 0;
+        if (focus === 'why') setTimeout(() => document.getElementById('todayWhy')?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 120);
+    },
+
+    selectTodayDay: function(ds) {
+        const box = document.getElementById('todayBreakdownContent');
+        const top = box ? box.scrollTop : 0;
+        this._todayDaySel = ds;
+        this.renderTodayBreakdown();
+        if (box) box.scrollTop = top;
+    },
+
+    editTxFromDay: function(id) {
+        this.closeSettingsSheet('todayBreakdownSheet');
+        this.openEditTxModal(id);
     },
 
     renderTodayBreakdown: function() {
@@ -3008,28 +3084,61 @@ window.app = {
         math += row('Terpakai hari ini', 'Di luar tagihan recurring & transaksi non-budget', `-${this._rp(s.spentToday)}`, 'text-danger');
         math += row(s.left < 0 ? 'Over budget' : 'Sisa hari ini', s.tomorrow === null ? 'Besok gajian 🎉' : `Jatah besok ~${this._rp(s.tomorrow)}`, this._rp(s.left), s.left < 0 ? 'text-danger' : 'text-success', true);
 
-        // Last 7 days vs today's budget
+        // Last 7 days: each day against the budget it actually had (tap a bar for its transactions)
         const days = [];
         for (let i = 6; i >= 0; i--) {
             const d = new Date(c.today.getFullYear(), c.today.getMonth(), c.today.getDate() - i);
             const ds = this.toLocalDateString(d);
-            const spent = allTransactions.filter(tx => tx.dateStr === ds && this._isDailySpend(tx)).reduce((sum, tx) => sum + tx.amount, 0);
-            days.push({ d, spent, isToday: i === 0 });
+            const info = s.dayInfo(ds);
+            const spent = info ? info.spent : allTransactions.filter(tx => tx.dateStr === ds && this._isDailySpend(tx)).reduce((sum, tx) => sum + tx.amount, 0);
+            days.push({ d, ds, spent, budget: info ? Math.max(0, info.budget) : null, isToday: i === 0 });
         }
-        const ref = Math.max(0, s.todayBudget);
-        const maxV = Math.max(ref, ...days.map(d => d.spent), 1);
+        const sel = days.find(d => d.ds === this._todayDaySel) || days[days.length - 1];
+        const maxV = Math.max(...days.map(d => Math.max(d.spent, d.budget || 0)), 1);
         const bars = days.map(day => {
             const h = Math.max(4, Math.round((day.spent / maxV) * 100));
-            const over = ref > 0 && day.spent > ref;
+            const over = day.budget !== null && day.spent > day.budget;
             const color = over ? '#EF4444' : (day.isToday ? '#FFB800' : '#1CBDB3');
+            const isSel = day === sel;
+            const tick = day.budget !== null ? `<div class="absolute left-[-2px] right-[-2px] border-t-2 border-primary/50 pointer-events-none" style="bottom:${Math.min(100, Math.round((day.budget / maxV) * 100))}%"></div>` : '';
             return `
-                <div class="flex-1 flex flex-col items-center gap-1 min-w-0">
-                    <span class="text-[8px] font-bold text-gray-400">${day.spent > 0 ? this._rpShort(day.spent) : '–'}</span>
-                    <div class="w-full h-20 flex items-end"><div class="today-weekbar w-full rounded-lg" style="height:${h}%;background:${color}"></div></div>
-                    <span class="text-[9px] font-bold ${day.isToday ? 'text-primary' : 'text-gray-400'}">${day.d.toLocaleDateString('id-ID', { weekday: 'short' }).slice(0, 3)}</span>
-                </div>`;
+                <button type="button" onclick="app.selectTodayDay('${day.ds}')" class="flex-1 flex flex-col items-center gap-1 min-w-0 active:scale-95 transition">
+                    <span class="text-[8px] font-bold ${isSel ? 'text-primary' : 'text-gray-400'}">${day.spent > 0 ? this._rpShort(day.spent) : '–'}</span>
+                    <div class="relative w-full h-20 flex items-end">${tick}<div class="today-weekbar w-full rounded-lg ${isSel ? 'ring-2 ring-primary/40 ring-offset-1' : ''}" style="height:${h}%;background:${color}"></div></div>
+                    <span class="text-[9px] font-bold px-1.5 py-0.5 rounded-full ${isSel ? 'bg-primary text-white' : (day.isToday ? 'text-primary' : 'text-gray-400')}">${day.d.toLocaleDateString('id-ID', { weekday: 'short' }).slice(0, 3)}</span>
+                </button>`;
         }).join('');
-        const baseLine = ref > 0 ? `<div class="absolute left-0 right-0 border-t-2 border-dashed border-primary/20 pointer-events-none" style="bottom:${Math.round((ref / maxV) * 80) + 16}px"></div>` : '';
+
+        // Detail of the selected day
+        const selTxs = allTransactions.filter(tx => tx.dateStr === sel.ds);
+        const selDate = sel.d.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'short' });
+        let selBadge = '';
+        if (sel.budget !== null) {
+            const diff = sel.budget - sel.spent;
+            selBadge = diff >= 0
+                ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700">Hemat ${this._rpShort(diff)}</span>`
+                : `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-600">Over ${this._rpShort(Math.abs(diff))}</span>`;
+        }
+        const txRows = selTxs.length ? selTxs.map(tx => {
+            const def = this.getCategoryDef(tx.category);
+            let tag = '', sign = '-', amtCls = 'text-primary';
+            if (tx.type === 'Income') { sign = '+'; amtCls = 'text-success'; tag = 'Income'; }
+            else if (tx.type === 'Transfer') { sign = ''; amtCls = 'text-blue-500'; tag = 'Transfer'; }
+            else if (tx.recurringId) tag = 'Tagihan ✓';
+            else if (this._billMatched && this._billMatched.has(tx.id)) tag = 'Tagihan (dikenali)';
+            else if (this._isBudgetExcluded(tx)) tag = 'Non-budget';
+            const eats = this._isDailySpend(tx);
+            const isTr = tx.type === 'Transfer';
+            return `
+                <button type="button" onclick="app.editTxFromDay('${tx.id}')" class="w-full flex items-center gap-3 text-left active:opacity-70 transition">
+                    <div class="w-8 h-8 rounded-xl flex items-center justify-center shrink-0" style="background:${isTr ? '#DBEAFE' : def.color + '15'};color:${isTr ? '#3B82F6' : def.color}"><i class="ph-fill ${isTr ? 'ph-arrows-left-right' : def.icon} text-sm"></i></div>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-xs font-bold text-primary truncate">${tx.note || tx.category || 'Transfer'}</p>
+                        <p class="text-[10px] text-gray-400">${tx.category || ''}${tag ? ` · <span class="${tx.type === 'Expense' ? 'text-tertiary' : ''} font-bold">${tag}</span>` : ''}${eats ? ' · <span class="text-danger font-bold">makan jatah</span>' : ''}</p>
+                    </div>
+                    <span class="text-xs font-bold shrink-0 ${amtCls}">${sign}Rp ${this.format(tx.amount)}</span>
+                </button>`;
+        }).join('') : `<p class="text-[11px] text-gray-400 text-center py-2">Belum ada transaksi di hari ini 🫙</p>`;
 
         const billRows = s.bills.length ? s.bills.slice(0, 6).map(b => {
             const def = this.getCategoryDef(b.category);
@@ -3045,6 +3154,20 @@ window.app = {
         }).join('') + (s.bills.length > 6 ? `<p class="text-[10px] text-gray-400 text-center">+${s.bills.length - 6} lainnya</p>` : '')
             : `<p class="text-[11px] text-gray-400">Belum ada tagihan/langganan recurring.</p>`;
 
+        let whyCard = '';
+        if (s.trendWhy && Math.abs(s.trend) >= 1) {
+            const w = s.trendWhy, sg = v => `${v >= 0 ? '+' : '-'}${this._rp(Math.abs(v)).replace('-', '')}`;
+            const up = s.trend > 0;
+            whyCard = `
+            <div id="todayWhy" class="rounded-2xl p-4 ${up ? 'bg-emerald-50' : 'bg-red-50'}">
+                <p class="text-[10px] uppercase tracking-[0.15em] font-bold mb-1 ${up ? 'text-emerald-600' : 'text-red-500'}">Kenapa jatah ${up ? 'naik' : 'turun'} ${this._rpShort(Math.abs(s.trend))}?</p>
+                <p class="text-[10px] text-gray-500 mb-2">Dibanding kemarin (${this._rp(s.yesterdayBudget)}). Uang yang berubah dibagi rata ke sisa ${s.daysLeft} hari.</p>
+                ${row(w.rollover >= 0 ? 'Kemarin hemat' : 'Kemarin over', `Jatah ${this._rpShort(s.yesterdayBudget)}, terpakai ${this._rpShort(w.spentYesterday)}`, sg(w.rollover), w.rollover >= 0 ? 'text-success' : 'text-danger')}
+                ${Math.abs(w.arrived) >= 1 ? row(w.arrived >= 0 ? 'Uang masuk hari ini' : 'Ditabung hari ini', 'Income / transfer dari-ke tabungan', sg(w.arrived), w.arrived >= 0 ? 'text-success' : 'text-danger') : ''}
+                ${row('Jatah hari ini', `Kemarin ${this._rp(s.yesterdayBudget)}`, this._rp(s.todayBudget), 'text-primary', true)}
+            </div>`;
+        }
+
         content.innerHTML = `
             <div class="rounded-2xl bg-primary text-white p-4 space-y-1.5">
                 ${this._todayTaglines.map((t, i) => `<p class="text-[11px] leading-snug ${i === 0 ? 'font-bold' : 'text-white/70'}"><i class="ph-fill ${['ph-calendar-check', 'ph-arrow-bend-down-right', 'ph-lightning'][i]} text-secondary mr-1"></i>${t}</p>`).join('')}
@@ -3052,9 +3175,22 @@ window.app = {
 
             <div class="bg-gray-50 rounded-2xl px-4 py-2">${math}</div>
 
+            ${whyCard}
+
             <div class="bg-gray-50 rounded-2xl p-4">
-                <p class="text-[10px] uppercase tracking-[0.15em] text-gray-400 font-bold mb-3">7 hari terakhir vs jatah hari ini</p>
-                <div class="relative flex items-end gap-1.5">${baseLine}${bars}</div>
+                <div class="flex items-center justify-between mb-3">
+                    <p class="text-[10px] uppercase tracking-[0.15em] text-gray-400 font-bold">7 hari terakhir</p>
+                    <p class="text-[9px] text-gray-400 flex items-center gap-1"><span class="inline-block w-3 border-t-2 border-primary/50"></span> jatah hari itu · tap batang</p>
+                </div>
+                <div class="flex items-end gap-1.5">${bars}</div>
+                <div class="mt-3 pt-3 border-t border-gray-200">
+                    <div class="flex items-center justify-between gap-2 mb-1">
+                        <p class="text-xs font-bold text-primary">${selDate}</p>
+                        ${selBadge}
+                    </div>
+                    <p class="text-[10px] text-gray-400 mb-3">${sel.budget !== null ? `Jatah ${this._rp(sel.budget)} · terpakai ${this._rp(sel.spent)}` : `Sebelum siklus ini · terpakai ${this._rp(sel.spent)}`}</p>
+                    <div class="space-y-2.5">${txRows}</div>
+                </div>
             </div>
 
             <div class="bg-gray-50 rounded-2xl p-4 space-y-3">
