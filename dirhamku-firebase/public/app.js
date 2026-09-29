@@ -395,6 +395,17 @@ const SFX = (() => {
         } catch(e) {}
     }
 
+    // Money out: two softer bells stepping down
+    function spend() {
+        if (!isEnabled()) return;
+        try {
+            const ac  = getCtx();
+            const now = ac.currentTime;
+            bell(ac, 987.8, now,        0.2,  0.5);  // B5
+            bell(ac, 784.0, now + 0.13, 0.16, 0.65); // G5
+        } catch(e) {}
+    }
+
     // Page flip: short filtered white-noise whoosh
     function page() {
         if (!isEnabled()) return;
@@ -440,7 +451,7 @@ const SFX = (() => {
         } catch(e) {}
     }
 
-    return { coin, page, bubble, isEnabled };
+    return { coin, spend, page, bubble, isEnabled };
 })();
 
 // ============================================================
@@ -2797,32 +2808,93 @@ window.app = {
         }).join('');
     },
 
-    // Coins pop out of the jar when money leaves, drop in when money arrives.
-    _todayFx: function(delta, base) {
+    _todaySeen: null,   // ids of transactions already shown (so each new one animates once)
+
+    // New transactions since the last render, grouped into money-in / money-out events.
+    _detectTodayFx: function(s) {
+        const c = s.cycle;
+        if (this._todaySeen === null) { this._todaySeen = new Set(allTransactions.map(t => t.id)); return []; }
+        const groups = {};
+        allTransactions.forEach(tx => {
+            if (this._todaySeen.has(tx.id)) return;
+            this._todaySeen.add(tx.id);
+            if (!tx.dateStr || tx.dateStr < c.startStr || tx.dateStr > c.todayStr) return;
+            let dir = null, tag = '';
+            if (tx.type === 'Income') dir = 'in';
+            else if (tx.type === 'Transfer') {
+                const fromS = this._isSavingsAccount(tx.fromAccountId), toS = this._isSavingsAccount(tx.toAccountId);
+                if (!fromS && toS) { dir = 'out'; tag = 'save'; }
+                else if (fromS && !toS) { dir = 'in'; tag = 'save'; }
+            } else if (tx.type === 'Expense') {
+                dir = 'out';
+                if (tx.recurringId || (this._billMatched && this._billMatched.has(tx.id))) tag = 'bill';
+                else if (this._isBudgetExcluded(tx)) tag = 'non';
+            }
+            if (!dir) return;
+            const k = dir + '|' + tag;
+            (groups[k] = groups[k] || { dir, tag, amount: 0 }).amount += tx.amount;
+        });
+        return Object.values(groups);
+    },
+
+    _playTodayFx: function(groups) {
         const fx = document.getElementById('todayFx');
-        if (!fx || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
-        const out = delta < 0;
-        const count = Math.min(6, Math.max(1, Math.ceil(Math.abs(delta) / Math.max(1, Math.abs(base)) * 4)));
-        for (let i = 0; i < count; i++) {
-            const coin = document.createElement('div');
-            coin.className = `today-coin ${out ? 'out' : 'in'}${Math.random() < 0.3 ? ' silver' : ''}`;
-            coin.style.left = '50%';
-            coin.style.top = '10%';
-            coin.style.setProperty('--dx', `${Math.round((Math.random() - 0.5) * 70)}px`);
-            coin.style.animationDelay = `${i * 110}ms`;
-            fx.appendChild(coin);
-            setTimeout(() => coin.remove(), 1300 + i * 110);
+        if (!fx || !groups.length) return;
+        const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+        const isBattery = this.getTodayVisual() === 'battery';
+        const y0 = isBattery ? 22 : 12;   // where coins enter/leave: jar slot / top of battery
+        groups.forEach((g, idx) => setTimeout(() => this._fxBurst(g, fx, y0, isBattery, reduced), idx * 800));
+    },
+
+    _fxBurst: function(g, fx, y0, isBattery, reduced) {
+        const out = g.dir === 'out';
+        const notes = g.amount >= 200000 ? Math.min(4, 1 + Math.floor(g.amount / 1000000)) : 0;
+        const coins = notes ? 3 : Math.max(1, Math.min(7, Math.ceil(g.amount / 15000)));
+        const rand = (a, b) => a + Math.random() * (b - a);
+        const add = (el, i, spread) => {
+            el.style.setProperty('--y0', `${y0}px`);
+            el.style.setProperty('--dx', `${Math.round(rand(-spread, spread))}px`);
+            el.style.setProperty('--r0', `${Math.round(rand(-30, 30))}deg`);
+            el.style.setProperty('--r1', `${Math.round(rand(-22, 22))}deg`);
+            el.style.animationDelay = `${i * 110}ms`;
+            fx.appendChild(el);
+            setTimeout(() => el.remove(), 1500 + i * 110);
+        };
+        let n = 0;
+        if (!reduced) {
+            for (let i = 0; i < notes; i++) {
+                const el = document.createElement('div');
+                el.className = `fx-note ${out ? 'out' : 'in'}`;
+                el.textContent = 'Rp';
+                add(el, n++, 34);
+            }
+            for (let i = 0; i < coins; i++) {
+                const el = document.createElement('div');
+                el.className = `today-coin ${out ? 'out' : 'in'}${Math.random() < 0.3 ? ' silver' : ''}`;
+                add(el, n++, 38);
+            }
+            const ring = document.createElement('div');
+            ring.className = `fx-ring ${out ? 'out' : 'in'}`;
+            ring.style.animationDelay = out ? '0ms' : '450ms';
+            fx.appendChild(ring);
+            setTimeout(() => ring.remove(), 1600);
+            // the container reacts: bounce when money lands, wobble when it leaves
+            const target = document.getElementById(isBattery ? 'todayBattery' : 'todayJar');
+            const hit = out ? 'jar-hit-out' : 'jar-hit-in';
+            if (target) setTimeout(() => { target.classList.remove('jar-hit-in', 'jar-hit-out'); target.getBoundingClientRect(); target.classList.add(hit); setTimeout(() => target.classList.remove(hit), 700); }, out ? 80 : 520);
         }
+        const icon = g.tag === 'bill' ? '🧾 ' : g.tag === 'save' ? '🏦 ' : '';
         const lbl = document.createElement('div');
-        lbl.className = 'today-delta';
+        lbl.className = `today-delta${g.amount >= 200000 ? ' big' : ''}`;
         lbl.style.color = out ? '#FCA5A5' : '#6EE7B7';
-        lbl.textContent = `${out ? '-' : '+'}${this._rpShort(Math.abs(delta))}`;
+        lbl.textContent = `${icon}${out ? '-' : '+'}${this._rpShort(g.amount)}`;
+        if (!reduced) lbl.style.animationDelay = out ? '60ms' : '380ms';
         fx.appendChild(lbl);
-        setTimeout(() => lbl.remove(), 1700);
+        setTimeout(() => lbl.remove(), 2400);
+        if (out) SFX.spend(); else setTimeout(() => SFX.coin(), 380);
         if (!out) {
-            SFX.coin();
             const pile = document.getElementById('jarPile');
-            if (pile) setTimeout(() => { pile.classList.remove('settle'); pile.getBoundingClientRect(); pile.classList.add('settle'); }, 650);
+            if (pile) setTimeout(() => { pile.classList.remove('settle'); pile.getBoundingClientRect(); pile.classList.add('settle'); }, 800);
         }
     },
 
@@ -2880,6 +2952,8 @@ window.app = {
         this._todayState = s;
         this._renderTodayMini(s);
         const active = this._isTodayActive();
+        const fxGroups = this._detectTodayFx(s);
+        if (active && !this._todayIntro && s.state !== 'loading') this._playTodayFx(fxGroups);
 
         document.getElementById('todayDateLabel').textContent = s.cycle.today.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'short' });
         hero.dataset.state = s.state;
@@ -2912,6 +2986,7 @@ window.app = {
             taglineEl.textContent = 'Toplesnya masih kosong. Begitu income lo kecatat, otomatis dibagi rata per hari (udah dipotong tagihan & langganan).';
             this._setTodayFill(0, false);
             this._todayLastLeft = null;
+            this._todayIntro = false;
             if (active && !this._todayGreeted) {
                 this._todayGreeted = true;
                 this.addChatBubble(`☀️ <b>Day Mode on!</b> Belum ada income yang masuk siklus ini, jadi toplesnya masih kosong 🫙<br>Catat gaji/pemasukan lo di sini, misal <code>+ 5jt gaji</code> — jatah harian langsung kebagi otomatis.`, 'bot', true);
@@ -2928,7 +3003,6 @@ window.app = {
             : `uang siklus ini udah minus ${this._rpShort(Math.abs(s.pool))}`;
         bar.style.width = `${Math.round(s.pct * 100)}%`;
         this._setTodayFill(s.pct, this._todayIntro);
-        if (active && !this._todayIntro && prev !== null && Math.abs(s.left - prev) >= 1) this._todayFx(s.left - prev, s.todayBudget);
         this._todayIntro = false;
         this._todayLastLeft = s.left;
 
