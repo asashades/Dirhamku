@@ -87,6 +87,11 @@
         .today-hero.is-compact .today-amount { font-size: 22px; }
         .today-collapsible { max-height: 170px; opacity: 1; overflow: hidden; transition: max-height .35s ease, opacity .25s ease, margin .35s ease; }
         .today-hero.is-compact .today-collapsible { max-height: 0; opacity: 0; margin-top: 0; }
+        .today-strip-list { max-height: 0; overflow: hidden; transition: max-height .3s ease; }
+        #todayStrip[data-open="1"] .today-strip-list { max-height: 168px; overflow-y: auto; border-top: 1px solid #F3F4F6; }
+        .today-hero.is-compact ~ #todayStrip .today-strip-list { max-height: 0; overflow: hidden; }
+        .today-strip-caret { transition: transform .3s ease; }
+        #todayStrip[data-open="1"] .today-strip-caret { transform: rotate(180deg); }
         .jar-coins, .battery-level { transition: transform 1.4s cubic-bezier(.22,1,.36,1); }
         .battery-level { transform-box: fill-box; transform-origin: left center; }
         .jar-body { animation: jarBob 3.2s ease-in-out infinite; transform-box: fill-box; transform-origin: 50% 100%; }
@@ -732,8 +737,21 @@
                         </button>
                     </div>
                 </div>
-                <!-- Chat (moved here from the Input tab while Day Mode is open) -->
-                <div id="todayChatSlot" class="flex-1 min-h-0 flex flex-col"></div>
+                <!-- Today's transactions: chat history isn't saved, so this keeps today's entries visible after reopening -->
+                <div id="todayStrip" class="hidden flex-col min-h-0 px-3 pt-2" data-open="0">
+                    <div class="flex flex-col min-h-0 bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                        <button type="button" id="todayStripToggle" onclick="app.toggleTodayStrip()" aria-expanded="false" aria-controls="todayStripList" class="shrink-0 w-full flex items-center gap-2 px-3 py-2 text-left active:bg-gray-50 transition">
+                            <i class="ph-bold ph-receipt text-sm text-primary"></i>
+                            <span class="text-[11px] font-bold text-primary">Hari ini</span>
+                            <span id="todayStripCount" class="hidden min-w-[18px] h-[18px] px-1 rounded-full bg-primary text-white text-[10px] font-bold items-center justify-center">0</span>
+                            <span id="todayStripSummary" class="flex-1 min-w-0 truncate text-[10px] text-gray-400 font-semibold text-right"></span>
+                            <i class="ph-bold ph-caret-down text-xs text-gray-400 today-strip-caret"></i>
+                        </button>
+                        <div id="todayStripList" class="today-strip-list min-h-0 no-scrollbar momentum-scroll"></div>
+                    </div>
+                </div>
+                <!-- Chat (moved here from the Input tab while Day Mode is open); min height keeps the composer on screen when the strip is open -->
+                <div id="todayChatSlot" class="flex-1 min-h-[120px] flex flex-col"></div>
             </div>
 
             <!-- ====== TAB: TRANSACTIONS ====== -->
