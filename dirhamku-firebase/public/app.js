@@ -2583,7 +2583,7 @@ window.app = {
 
     // Expenses that eat the daily budget: not a recurring bill (already reserved) and not excluded from budget.
     _isDailySpend: function(tx) {
-        return tx.type === 'Expense' && !tx.recurringId && !this._isBudgetExcluded(tx);
+        return tx.type === 'Expense' && !tx.recurringId && !this._isBudgetExcluded(tx) && !(this._billMatched && this._billMatched.has(tx.id));
     },
 
     _isSavingsAccount: function(accountId) {
@@ -2591,9 +2591,49 @@ window.app = {
         return !!a && (a.purpose === 'emergency_fund' || a.is_excluded_from_budget === true);
     },
 
+    _billMatched: null,   // txId -> bill, manual expenses recognised as paying a recurring bill this cycle
+
+    // A bill is already reserved out of the budget, so paying it must not also eat the daily budget.
+    // Payments made with the ✓ button carry recurringId; manual ones are matched by category + amount (±10%).
+    // Each bill can claim at most as many payments as it has occurrences per cycle (paid ones count).
+    _matchManualBills: function(bills, c) {
+        const matched = new Map();
+        const paid = {};
+        const expenses = allTransactions.filter(tx => tx.type === 'Expense' && tx.dateStr && tx.dateStr >= c.startStr && tx.dateStr <= c.todayStr);
+        expenses.forEach(tx => { if (tx.recurringId) (paid[tx.recurringId] = paid[tx.recurringId] || []).push(tx); });
+        const pool = expenses.filter(tx => !tx.recurringId && !this._isBudgetExcluded(tx));
+        const norm = t => (t || '').toLowerCase().trim();
+        bills.forEach(b => {
+            b.paidTxs = paid[b.id] ? paid[b.id].slice() : [];
+            const slots = Math.max(1, Math.round(b.perCycle / b.amount)) - b.paidTxs.length;
+            if (slots <= 0) return;
+            const name = norm(b.name);
+            pool.filter(tx => !matched.has(tx.id) && norm(tx.category) === norm(b.category) && Math.abs(tx.amount - b.amount) <= b.amount * 0.1)
+                .map(tx => { const n = norm(tx.note); return { tx, noteMiss: name && n && (n.includes(name) || name.includes(n)) ? 0 : 1, diff: Math.abs(tx.amount - b.amount) }; })
+                .sort((x, y) => x.noteMiss - y.noteMiss || x.diff - y.diff || x.tx.dateStr.localeCompare(y.tx.dateStr))
+                .slice(0, slots)
+                .forEach(({ tx }) => { matched.set(tx.id, b); b.paidTxs.push(tx); });
+        });
+        return matched;
+    },
+
     computeTodayBudget: function() {
         const c = this.getBudgetCycle();
         const yesterdayStr = this.toLocalDateString(new Date(c.today.getFullYear(), c.today.getMonth(), c.today.getDate() - 1));
+        const bills = (this._recurringCache || [])
+            .filter(r => Number(r.amount) > 0 && (!r.endDate || r.endDate >= c.startStr))
+            .map(r => {
+                const amt = Number(r.amount);
+                let perCycle = amt;
+                if (r.frequency === 'weekly') perCycle = amt * c.totalDays / 7;
+                else if (r.frequency === 'yearly') perCycle = amt / 12;
+                else if (r.frequency === 'daily') perCycle = amt * c.totalDays;
+                return { id: r.id, name: r.note || r.category || 'Tagihan', category: r.category, amount: amt, frequency: r.frequency, perCycle, perDay: perCycle / c.totalDays };
+            })
+            .sort((a, b) => b.perCycle - a.perCycle);
+        const billsTotal = bills.reduce((s, b) => s + b.perCycle, 0);
+        this._billMatched = this._recurringCache ? this._matchManualBills(bills, c) : new Map();
+
         // Per-day money movements within the cycle (up to today)
         const income = {}, spend = {}, savNet = {};
         let incomeCount = 0;
@@ -2613,19 +2653,6 @@ window.app = {
             }
         });
         const sumWhere = (map, test) => Object.keys(map).filter(test).reduce((s, k) => s + map[k], 0);
-
-        const bills = (this._recurringCache || [])
-            .filter(r => Number(r.amount) > 0 && (!r.endDate || r.endDate >= c.startStr))
-            .map(r => {
-                const amt = Number(r.amount);
-                let perCycle = amt;
-                if (r.frequency === 'weekly') perCycle = amt * c.totalDays / 7;
-                else if (r.frequency === 'yearly') perCycle = amt / 12;
-                else if (r.frequency === 'daily') perCycle = amt * c.totalDays;
-                return { name: r.note || r.category || 'Tagihan', category: r.category, amount: amt, frequency: r.frequency, perCycle, perDay: perCycle / c.totalDays };
-            })
-            .sort((a, b) => b.perCycle - a.perCycle);
-        const billsTotal = bills.reduce((s, b) => s + b.perCycle, 0);
 
         // Money available for day X = income & savings moves up to X − bills − spending before X,
         // spread over the days left (X until payday). Income pushes the daily budget up,
@@ -2927,8 +2954,15 @@ window.app = {
     },
 
     // Short summary used by chat after saving / on "budget hari ini".
-    todaySummaryText: function() {
+    todaySummaryText: function(newBillPayments = []) {
         const s = this._todayState || this.computeTodayBudget();
+        const billNote = newBillPayments.length
+            ? newBillPayments.map(([, b]) => `🧾 Dikenali sebagai bayar <b>${b.name}</b>, udah dicadangin di tagihan, jadi <b>nggak ngurangin jatah harian</b>.`).join('<br>') + '<br>'
+            : '';
+        return billNote + this._todaySummaryCore(s);
+    },
+
+    _todaySummaryCore: function(s) {
         if (s.state === 'setup') return '🫙 Belum ada income masuk siklus ini. Catat dulu, misal <code>+ 5jt gaji</code>, nanti jatah harian kebagi otomatis.';
         const next = s.tomorrow === null ? 'Besok gajian 🎉' : (s.tomorrow < 0 ? `Jatah besok masih minus <b>${this._rp(Math.abs(s.tomorrow))}</b>.` : `Jatah besok jadi ~<b>${this._rp(s.tomorrow)}</b>.`);
         if (s.left < 0) return `🚨 Hari ini over <b>${this._rp(Math.abs(s.left))}</b>. ${next} Rem dulu ya bestie 🙏`;
@@ -3004,7 +3038,7 @@ window.app = {
                     <div class="w-8 h-8 rounded-xl flex items-center justify-center shrink-0" style="background:${def.color}15;color:${def.color}"><i class="ph-fill ${def.icon} text-sm"></i></div>
                     <div class="flex-1 min-w-0">
                         <p class="text-xs font-bold text-primary truncate">${b.name}</p>
-                        <p class="text-[10px] text-gray-400">${this._rp(b.amount)} · ${{ monthly: 'bulanan', weekly: 'mingguan', yearly: 'tahunan', daily: 'harian' }[b.frequency] || b.frequency}</p>
+                        <p class="text-[10px] text-gray-400">${this._rp(b.amount)} · ${{ monthly: 'bulanan', weekly: 'mingguan', yearly: 'tahunan', daily: 'harian' }[b.frequency] || b.frequency}${b.paidTxs && b.paidTxs.length ? ` · <span class="text-success font-bold"><i class="ph-bold ph-check"></i> dibayar ${fmtD(this.parseLocalDateString(b.paidTxs.map(t => t.dateStr).sort().pop()))}</span>` : ''}</p>
                     </div>
                     <span class="text-xs font-bold text-danger shrink-0">${this._rpShort(b.perDay)}/hari</span>
                 </div>`;
@@ -3029,6 +3063,7 @@ window.app = {
                     <button onclick="app.closeSettingsSheet('todayBreakdownSheet'); app.switchTab('transactions'); setTimeout(() => app.openRecurringModal(), 200)" class="text-[10px] font-bold text-tertiary uppercase">Kelola</button>
                 </div>
                 ${billRows}
+                ${this._billMatched && this._billMatched.size ? `<p class="text-[10px] text-gray-400 leading-relaxed pt-1 border-t border-gray-200"><i class="ph-fill ph-receipt text-success"></i> ${this._billMatched.size} pengeluaran manual dikenali sebagai bayar tagihan (kategori sama, nominal mirip), jadi nggak makan jatah harian.</p>` : ''}
             </div>
 
             <div class="bg-gray-50 rounded-2xl p-4 space-y-3">
@@ -6514,6 +6549,7 @@ window.app = {
         if (!pendingChatTxs || pendingChatTxs.length === 0) return;
         
         document.querySelectorAll('#chatHistory button').forEach(b => b.disabled = true);
+        const beforeMatched = new Set(this._billMatched ? this._billMatched.keys() : []);
         try {
             const batchPromises = pendingChatTxs.map(pTx => {
                 let tx = {
@@ -6547,7 +6583,10 @@ window.app = {
             this.clearPendingTransactionPanel();
             await this.loadData();
             this.revokeNoSpendIfNeeded();
-            if (this._isTodayActive()) this.addChatBubble(this.todaySummaryText(), 'bot', true);
+            if (this._isTodayActive()) {
+                const newBills = [...(this._billMatched || new Map())].filter(([id]) => !beforeMatched.has(id));
+                this.addChatBubble(this.todaySummaryText(newBills), 'bot', true);
+            }
         } catch(e) {
             this.addChatBubble('❌ Gagal menyimpan: ' + e.message, 'bot');
         }
