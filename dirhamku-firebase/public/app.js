@@ -2612,8 +2612,10 @@ window.app = {
             const slots = Math.max(1, Math.round(b.perCycle / b.amount)) - b.paidTxs.length;
             if (slots <= 0) return;
             const name = norm(b.name);
-            pool.filter(tx => !matched.has(tx.id) && norm(tx.category) === norm(b.category) && Math.abs(tx.amount - b.amount) <= b.amount * 0.1)
-                .map(tx => { const n = norm(tx.note); return { tx, noteMiss: name && n && (n.includes(name) || name.includes(n)) ? 0 : 1, diff: Math.abs(tx.amount - b.amount) }; })
+            // Same category OR the note names the bill (chat may auto-file "netflix" under another category)
+            const noteHit = tx => { const t = norm(tx.note); return name.length >= 3 && t.length >= 3 && (t.includes(name) || name.includes(t)); };
+            pool.filter(tx => !matched.has(tx.id) && (norm(tx.category) === norm(b.category) || noteHit(tx)) && Math.abs(tx.amount - b.amount) <= b.amount * 0.1)
+                .map(tx => ({ tx, noteMiss: noteHit(tx) ? 0 : 1, diff: Math.abs(tx.amount - b.amount) }))
                 .sort((x, y) => x.noteMiss - y.noteMiss || x.diff - y.diff || x.tx.dateStr.localeCompare(y.tx.dateStr))
                 .slice(0, slots)
                 .forEach(({ tx }) => { matched.set(tx.id, b); b.paidTxs.push(tx); });
