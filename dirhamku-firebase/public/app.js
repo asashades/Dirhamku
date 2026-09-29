@@ -2313,16 +2313,19 @@ window.app = {
         const today = now.getDate();
         const curMonthStr = this.getCurrentMonthKey(now);
 
-        // Calculate next payday
+        // Calculate next payday (follows the income-anchored cycle used by Day Mode when it's available)
         let nextPayday = new Date(year, month, paydayDate);
         if (today > paydayDate) {
             nextPayday = new Date(year, month + 1, paydayDate);
         }
+        const cyc = this.getBudgetCycle(now);
+        const followCycle = cyc.source === 'salary' || cyc.source === 'largest';
+        if (followCycle) nextPayday = cyc.end;
 
         // Calculate days left
         const diffTime = nextPayday - now;
         const daysLeft = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        const totalDaysInCycle = new Date(nextPayday.getFullYear(), nextPayday.getMonth(), 0).getDate();
+        const totalDaysInCycle = followCycle ? cyc.totalDays : new Date(nextPayday.getFullYear(), nextPayday.getMonth(), 0).getDate();
 
         // Update UI
         const targetDateStr = nextPayday.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }).toUpperCase();
@@ -2521,19 +2524,53 @@ window.app = {
         return Math.round((Date.UTC(b.getFullYear(), b.getMonth(), b.getDate()) - Date.UTC(a.getFullYear(), a.getMonth(), a.getDate())) / 86400000);
     },
 
-    // Current payday cycle: [start, end) where start = last payday, end = next payday.
+    // Finds the income that starts the current budget cycle, so the cycle follows when money actually
+    // arrived (salary on the 1st, paid early on a weekend, paid late...) instead of a fixed date.
+    //   1) latest Salary/Gaji income within 45 days (ignoring small ones, <50% of the biggest)
+    //   2) else the biggest income within 45 days
+    _detectCycleAnchor: function(today) {
+        const todayStr = this.toLocalDateString(today);
+        const minStr = this.toLocalDateString(new Date(today.getFullYear(), today.getMonth(), today.getDate() - 45));
+        const incomes = allTransactions.filter(tx => tx.type === 'Income' && tx.dateStr && tx.dateStr >= minStr && tx.dateStr <= todayStr);
+        if (!incomes.length) return null;
+        const salaries = incomes.filter(tx => /^(salary|gaji)$/i.test((tx.category || '').trim()));
+        if (salaries.length) {
+            const maxAmt = Math.max(...salaries.map(tx => tx.amount));
+            const pick = salaries.filter(tx => tx.amount >= maxAmt * 0.5).sort((a, b) => b.dateStr.localeCompare(a.dateStr))[0];
+            return { kind: 'salary', dateStr: pick.dateStr, amount: pick.amount };
+        }
+        const pick = incomes.slice().sort((a, b) => (b.amount - a.amount) || b.dateStr.localeCompare(a.dateStr))[0];
+        return { kind: 'largest', dateStr: pick.dateStr, amount: pick.amount };
+    },
+
+    // Current budget cycle [start, end): from the last payday to the next one.
+    // source: 'salary' | 'largest' (auto, anchored on a real income) | 'default' (auto but no income yet) | 'manual'
     getBudgetCycle: function(now = new Date()) {
-        const payday = Math.min(Math.max(parseInt(currentProfile?.paydayDate) || 25, 1), 31);
-        const clampDay = (y, m) => new Date(y, m, Math.min(payday, new Date(y, m + 1, 0).getDate()));
         const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        let start = clampDay(today.getFullYear(), today.getMonth());
-        if (start > today) start = clampDay(today.getFullYear(), today.getMonth() - 1);
-        const end = clampDay(start.getFullYear(), start.getMonth() + 1);
-        const lastDay = new Date(end.getFullYear(), end.getMonth(), end.getDate() - 1);
+        const manualDay = Math.min(Math.max(parseInt(currentProfile?.paydayDate) || 25, 1), 31);
+        const clampDay = (y, m, day) => new Date(y, m, Math.min(day, new Date(y, m + 1, 0).getDate()));
+        const isManual = currentProfile?.dayModeCycle === 'manual';
+        const anchor = isManual ? null : this._detectCycleAnchor(today);
+        let start, end, source;
+        if (anchor) {
+            source = anchor.kind;
+            start = this.parseLocalDateString(anchor.dateStr);
+            end = clampDay(start.getFullYear(), start.getMonth() + 1, start.getDate());
+        } else {
+            source = isManual ? 'manual' : 'default';
+            start = clampDay(today.getFullYear(), today.getMonth(), manualDay);
+            if (start > today) start = clampDay(today.getFullYear(), today.getMonth() - 1, manualDay);
+            end = clampDay(start.getFullYear(), start.getMonth() + 1, manualDay);
+        }
+        const dayIndex = this._dayDiff(start, today);
+        // Next salary hasn't arrived by the expected date: keep the cycle open, everything left is for today.
+        const overdue = dayIndex >= this._dayDiff(start, end);
+        if (overdue) end = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
         return {
-            start, end, today, lastDay,
+            start, end, today, source, anchor, overdue, manualDay,
+            lastDay: new Date(end.getFullYear(), end.getMonth(), end.getDate() - 1),
             totalDays: this._dayDiff(start, end),
-            dayIndex: this._dayDiff(start, today),
+            dayIndex,
             startStr: this.toLocalDateString(start),
             todayStr: this.toLocalDateString(today)
         };
@@ -2594,7 +2631,9 @@ window.app = {
         // spread over the days left (X until payday). Income pushes the daily budget up,
         // spending pushes it down, and whatever isn't spent rolls into the following days.
         const poolFor = (x) => sumWhere(income, d => d <= x) + sumWhere(savNet, d => d <= x) - billsTotal - sumWhere(spend, d => d < x);
-        const daysLeft = c.totalDays - c.dayIndex; // incl. today
+        // Days the remaining money is spread over (incl. today). When salary is late, use a 7-day buffer
+        // instead of dumping everything on one day.
+        const daysLeft = c.overdue ? 7 : c.totalDays - c.dayIndex;
         const pool = poolFor(c.todayStr);
         const todayBudget = pool / daysLeft;
         const spentToday = spend[c.todayStr] || 0;
@@ -2817,7 +2856,7 @@ window.app = {
             ofEl.textContent = 'Belum ada income masuk siklus ini';
             bar.style.width = '0%';
             chipsEl.innerHTML = `<button onclick="app.prefillChat('+ 5jt gaji')" class="today-chip !bg-secondary !text-primary !border-secondary active:scale-95 transition"><i class="ph-bold ph-plus"></i> Catat income di chat</button>
-                <span class="today-chip"><i class="ph-bold ph-hourglass-medium"></i> ${s.daysLeft} hari ke gajian</span>`;
+                <span class="today-chip"><i class="ph-bold ph-hourglass-medium"></i> ${s.cycle.source === 'default' ? 'Siklus tgl ' + s.cycle.manualDay : s.daysLeft + ' hari ke gajian'}</span>`;
             taglineIcon.className = 'ph-fill ph-coins text-secondary text-sm mt-px shrink-0';
             taglineEl.textContent = 'Toplesnya masih kosong. Begitu income lo kecatat, otomatis dibagi rata per hari (udah dipotong tagihan & langganan).';
             this._setTodayFill(0, false);
@@ -2847,13 +2886,15 @@ window.app = {
             : s.trend > 0
                 ? `<span class="today-chip text-emerald-300"><i class="ph-bold ph-trend-up"></i> Jatah naik +${this._rpShort(s.trend)}</span>`
                 : `<span class="today-chip text-red-300"><i class="ph-bold ph-trend-down"></i> Jatah turun ${this._rpShort(Math.abs(s.trend))}</span>`;
-        const tomorrowChip = s.tomorrow === null
+        const tomorrowChip = s.cycle.overdue
+            ? `<span class="today-chip text-amber-300"><i class="ph-bold ph-hourglass-medium"></i> Gaji belum masuk</span>`
+            : s.tomorrow === null
             ? `<span class="today-chip text-emerald-300"><i class="ph-bold ph-confetti"></i> Besok gajian!</span>`
             : `<span class="today-chip ${s.tomorrow < 0 ? 'text-red-300' : ''}"><i class="ph-bold ph-sun-horizon"></i> Besok ${s.tomorrow < 0 ? `minus ${this._rpShort(Math.abs(s.tomorrow))}` : `~${this._rpShort(s.tomorrow)}`}</span>`;
         chipsEl.innerHTML = `
             ${trendChip}
             ${tomorrowChip}
-            <span class="today-chip"><i class="ph-bold ph-hourglass-medium"></i> ${s.daysLeft} hari ke gajian</span>
+            ${s.cycle.overdue ? '' : `<span class="today-chip"><i class="ph-bold ph-hourglass-medium"></i> ${s.daysLeft} hari ke gajian</span>`}
             <span class="today-chip"><i class="ph-bold ph-arrow-down-left"></i> Income ${this._rpShort(s.incomeTotal)}</span>`;
 
         if (s.incomeTotal <= s.billsTotal) {
@@ -2907,6 +2948,14 @@ window.app = {
         const fmtD = d => d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
         document.getElementById('todayBreakdownCycle').textContent = `Siklus ${fmtD(c.start)} – ${fmtD(c.lastDay)} · hari ke-${c.dayIndex + 1} dari ${c.totalDays}`;
 
+        const isAuto = c.source !== 'manual';
+        const cycleNote = c.source === 'salary'
+            ? { icon: 'ph-check-circle', color: 'text-success', text: `Gaji <b>${this._rp(c.anchor.amount)}</b> masuk <b>${fmtD(this.parseLocalDateString(c.anchor.dateStr))}</b>, ${c.overdue ? 'Gaji berikutnya belum masuk, jadi sisa uang dibagi 7 hari dulu biar nggak kebablasan. Begitu gaji dicatat, siklus otomatis pindah.' : `jadi siklus jalan sampai <b>${fmtD(c.lastDay)}</b>.`}` }
+            : c.source === 'largest'
+            ? { icon: 'ph-info', color: 'text-amber-500', text: `Belum ada income kategori <b>Salary/Gaji</b>, jadi dipakai income terbesar (<b>${this._rp(c.anchor.amount)}</b>, ${fmtD(this.parseLocalDateString(c.anchor.dateStr))}). Catat gaji pakai kata "gaji" biar akurat.` }
+            : c.source === 'default'
+            ? { icon: 'ph-info', color: 'text-amber-500', text: `Belum ada income 45 hari terakhir, jadi sementara pakai siklus tanggal <b>${c.manualDay}</b>. Begitu gaji dicatat, siklus otomatis pindah ke tanggal gaji masuk.` }
+            : { icon: 'ph-push-pin', color: 'text-indigo-400', text: `Pakai tanggal gajian tetap: tiap tanggal <b>${c.manualDay}</b>. Matikan opsi otomatis kalau ini bukan yang lo mau.` };
         const row = (label, sub, value, cls = 'text-primary', bold = false) => `
             <div class="flex items-center justify-between gap-3 py-2 ${bold ? 'border-t border-gray-200 mt-1 pt-3' : ''}">
                 <div class="min-w-0">
@@ -2920,7 +2969,7 @@ window.app = {
         math += row(`Tagihan & langganan (${s.bills.length})`, 'Dicadangin di awal siklus', `-${this._rp(s.billsTotal)}`, 'text-danger');
         math += row('Pengeluaran sebelum hari ini', c.dayIndex > 0 ? `${c.dayIndex} hari terakhir` : 'Hari pertama siklus', `-${this._rp(s.spentBefore)}`, 'text-danger');
         if (Math.abs(s.savingsNet) >= 1) math += row(s.savingsNet < 0 ? 'Ditabung' : 'Ambil dari tabungan', 'Transfer dengan akun dana darurat', `${s.savingsNet < 0 ? '-' : '+'}${this._rp(Math.abs(s.savingsNet))}`, s.savingsNet < 0 ? 'text-danger' : 'text-success');
-        math += row('Uang buat sisa siklus', `÷ ${s.daysLeft} hari sampai gajian`, this._rp(s.pool), s.pool < 0 ? 'text-danger' : 'text-primary', true);
+        math += row('Uang buat sisa siklus', c.overdue ? `÷ ${s.daysLeft} hari (gaji telat, dijatah 7 hari dulu)` : `÷ ${s.daysLeft} hari sampai gajian`, this._rp(s.pool), s.pool < 0 ? 'text-danger' : 'text-primary', true);
         math += row('Jatah hari ini', s.yesterdayBudget === null ? '' : `Kemarin ${this._rp(s.yesterdayBudget)} (${s.trend >= 0 ? 'naik' : 'turun'} ${this._rpShort(Math.abs(s.trend))})`, this._rp(s.todayBudget), s.todayBudget < 0 ? 'text-danger' : 'text-primary', true);
         math += row('Terpakai hari ini', 'Di luar tagihan recurring & transaksi non-budget', `-${this._rp(s.spentToday)}`, 'text-danger');
         math += row(s.left < 0 ? 'Over budget' : 'Sisa hari ini', s.tomorrow === null ? 'Besok gajian 🎉' : `Jatah besok ~${this._rp(s.tomorrow)}`, this._rp(s.left), s.left < 0 ? 'text-danger' : 'text-success', true);
@@ -2984,18 +3033,42 @@ window.app = {
 
             <div class="bg-gray-50 rounded-2xl p-4 space-y-3">
                 <p class="text-[10px] uppercase tracking-[0.15em] text-gray-400 font-bold">Siklus budget</p>
+                <div class="flex items-center justify-between gap-3">
+                    <div class="min-w-0">
+                        <p class="text-sm font-bold text-primary">Otomatis dari income</p>
+                        <p class="text-[10px] text-gray-400">Siklus mulai saat gaji lo masuk</p>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer shrink-0">
+                        <input type="checkbox" class="sr-only peer" ${isAuto ? 'checked' : ''} onchange="app.setDayModeCycle(this.checked)">
+                        <div class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-secondary"></div>
+                    </label>
+                </div>
+                <div class="rounded-xl bg-white border border-gray-100 px-3 py-2.5 flex items-start gap-2">
+                    <i class="ph-fill ${cycleNote.icon} ${cycleNote.color} text-base mt-px shrink-0"></i>
+                    <p class="text-[11px] text-gray-500 leading-relaxed">${cycleNote.text}</p>
+                </div>
+                ${isAuto ? '' : `
                 <label class="block">
-                    <span class="text-[10px] font-bold text-gray-400 uppercase">Tanggal gajian (awal siklus)</span>
+                    <span class="text-[10px] font-bold text-gray-400 uppercase">Tanggal gajian tetap</span>
                     <div class="mt-1 bg-white rounded-xl px-3 py-2.5 flex items-center gap-2 border border-gray-100">
                         <i class="ph-fill ph-calendar-check text-indigo-400"></i>
                         <input type="number" id="todayPaydayInput" inputmode="numeric" min="1" max="31" value="${currentProfile.paydayDate || 25}" class="flex-1 min-w-0 bg-transparent text-base font-bold font-heading text-primary outline-none">
                     </div>
                 </label>
-                <p class="text-[10px] text-gray-400 leading-relaxed">Income dihitung otomatis dari pemasukan yang lo catat sejak tanggal ini. Isi <b>1</b> kalau mau pakai bulan kalender.</p>
                 <button onclick="app.saveDayModeSettings()" class="w-full bg-secondary text-primary font-bold py-3 rounded-2xl shadow-sm active:scale-95 transition flex items-center justify-center gap-2 text-sm">
                     <i class="ph-bold ph-check"></i> Simpan
-                </button>
+                </button>`}
             </div>`;
+    },
+
+    setDayModeCycle: async function(auto) {
+        try {
+            await db.collection('users').doc(currentUser.uid).update({ dayModeCycle: auto ? 'auto' : 'manual' });
+            currentProfile.dayModeCycle = auto ? 'auto' : 'manual';
+            this._todayIntro = true;
+            this.renderToday();
+            this.renderTodayBreakdown();
+        } catch(e) { this.toast(e.message, true); this.renderTodayBreakdown(); }
     },
 
     saveDayModeSettings: async function() {
