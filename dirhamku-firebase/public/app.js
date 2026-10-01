@@ -2974,7 +2974,9 @@ window.app = {
     _syncTodayHero: function() {
         const hero = document.getElementById('todayHero');
         if (!hero) return;
-        const compact = !this._heroFxHold && !this._heroPeek && (this._heroTyping || this.getTodayHeroPref() === 'compact');
+        const roomy = window.innerHeight >= 780;   // an open daily summary needs the space on shorter screens
+        const compact = !this._heroFxHold && !this._heroPeek && (this._heroTyping || this.getTodayHeroPref() === 'compact' || (!roomy && this.isTodayStripOpen()));
+        document.getElementById('todayStrip')?.classList.toggle('is-typing', this._heroTyping && !this._heroPeek);
         hero.classList.toggle('is-compact', compact);
         hero.setAttribute('aria-expanded', compact ? 'false' : 'true');
     },
@@ -3048,6 +3050,7 @@ window.app = {
     },
 
     showToday: function() {
+        this._stripDay = null;
         this._setupTodayHero();
         this._heroTyping = false; this._heroPeek = false;
         this._syncTodayHero();
@@ -3298,25 +3301,159 @@ window.app = {
         document.getElementById('todayStripToggle')?.setAttribute('aria-expanded', open ? 'true' : 'false');
     },
 
-    // Collapsible list of today's transactions between the hero and the chat (folded by default).
+    // ── Ringkasan harian: week strip + summary of the picked day, between the hero and the chat ──
+    _stripDay: null,   // YYYY-MM-DD of the picked day (null = today)
+
+    // What a day looked like: spending that ate the budget, bills, income, non-budget, savings moves, net, vs that day's budget.
+    _daySummary: function(ds, s) {
+        const r = { exp: 0, expN: 0, bill: 0, billN: 0, inc: 0, incN: 0, non: 0, nonN: 0, sav: 0, txs: [] };
+        r.txs = allTransactions.filter(tx => tx.dateStr === ds);
+        r.txs.forEach(tx => {
+            if (tx.type === 'Income') { r.inc += tx.amount; r.incN++; }
+            else if (tx.type === 'Transfer') {
+                const fromS = this._isSavingsAccount(tx.fromAccountId), toS = this._isSavingsAccount(tx.toAccountId);
+                if (!fromS && toS) r.sav -= tx.amount; else if (fromS && !toS) r.sav += tx.amount;
+            } else if (tx.type === 'Expense') {
+                if (tx.recurringId || (this._billMatched && this._billMatched.has(tx.id))) { r.bill += tx.amount; r.billN++; }
+                else if (this._isBudgetExcluded(tx)) { r.non += tx.amount; r.nonN++; }
+                else { r.exp += tx.amount; r.expN++; }
+            }
+        });
+        r.net = r.inc - r.exp - r.bill - r.non;
+        r.info = s.dayInfo ? s.dayInfo(ds) : null;   // { budget, spent } for days inside the cycle
+        return r;
+    },
+
+    isTodayStripOpen: function() {
+        try { return localStorage.getItem('dirhamku_today_strip') === 'open'; } catch(e) { return false; }
+    },
+
+    toggleTodayStrip: function() {
+        this._setTodayStripOpen(!this.isTodayStripOpen());
+    },
+
+    _setTodayStripOpen: function(open) {
+        try { localStorage.setItem('dirhamku_today_strip', open ? 'open' : 'closed'); } catch(e) { /* ignore */ }
+        this._applyTodayStripOpen(open);
+        this._syncTodayHero();   // on short screens an open summary needs the room
+    },
+
+    _applyTodayStripOpen: function(open) {
+        const strip = document.getElementById('todayStrip');
+        if (!strip) return;
+        strip.dataset.open = open ? '1' : '0';
+        document.getElementById('todayStripToggle')?.setAttribute('aria-expanded', open ? 'true' : 'false');
+    },
+
+    selectStripDay: function(ds) {
+        this._stripDay = ds;
+        if (!this.isTodayStripOpen()) this._setTodayStripOpen(true);   // picking a day shows what happened on it
+        this._renderTodayStrip(this._todayState || this.computeTodayBudget());
+    },
+
+    shiftStripWeek: function(delta) {
+        const todayStr = this.toLocalDateString(new Date());
+        const cur = this.parseLocalDateString(this._stripDay || todayStr);
+        let next = this.toLocalDateString(new Date(cur.getFullYear(), cur.getMonth(), cur.getDate() + delta * 7));
+        if (next > todayStr) next = todayStr;
+        const oldest = allTransactions.length ? allTransactions[allTransactions.length - 1].dateStr : todayStr;   // loadData sorts newest first
+        if (delta < 0 && next < oldest) {
+            // stop at the first week that has data: land on the oldest day if that week still contains it
+            const t = this.parseLocalDateString(next);
+            const sunday = this.toLocalDateString(new Date(t.getFullYear(), t.getMonth(), t.getDate() + (7 - ((t.getDay() + 6) % 7)) - 1));
+            if (sunday < oldest) return;
+            next = oldest;
+        }
+        this._stripDay = next;
+        this._renderTodayStrip(this._todayState || this.computeTodayBudget());
+    },
+
     _renderTodayStrip: function(s) {
         const strip = document.getElementById('todayStrip');
         const list = document.getElementById('todayStripList');
-        if (!strip || !list) return;
-        const txs = allTransactions.filter(tx => tx.dateStr === s.cycle.todayStr);
-        const count = document.getElementById('todayStripCount');
-        count.textContent = txs.length;
-        count.classList.toggle('hidden', !txs.length);
-        count.classList.toggle('inline-flex', !!txs.length);
-        const parts = [];
-        if (s.spentToday > 0) parts.push(`makan jatah ${this._rpShort(s.spentToday)}`);
-        if (s.incomeToday > 0) parts.push(`+${this._rpShort(s.incomeToday)} masuk`);
-        document.getElementById('todayStripSummary').textContent = !txs.length ? 'belum ada transaksi' : (parts.join(' · ') || 'nggak ada yang makan jatah');
+        const weekEl = document.getElementById('todayWeek');
+        if (!strip || !list || !weekEl) return;
+        const todayStr = s.cycle.todayStr;
+        if (!this._stripDay || this._stripDay > todayStr) this._stripDay = todayStr;
+        const sel = this._stripDay;
+        const selDate = this.parseLocalDateString(sel);
         this._applyTodayStripOpen(this.isTodayStripOpen());
         strip.classList.remove('hidden');
         strip.classList.add('flex');
 
-        list.innerHTML = txs.length ? txs.map(tx => {
+        // week strip (Mon–Sun) around the picked day
+        const mon = new Date(selDate.getFullYear(), selDate.getMonth(), selDate.getDate() - ((selDate.getDay() + 6) % 7));
+        const names = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'];
+        const oldest = allTransactions.length ? allTransactions[allTransactions.length - 1].dateStr : todayStr;
+        const prevOk = this.toLocalDateString(mon) > oldest;
+        const nextOk = this.toLocalDateString(new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 7)) <= todayStr;
+        const arrow = (dir, ok) => `<button type="button" onclick="app.shiftStripWeek(${dir})" ${ok ? '' : 'disabled'} aria-label="${dir < 0 ? 'Minggu sebelumnya' : 'Minggu berikutnya'}" class="h-8 mt-4 flex items-center justify-center ${ok ? 'text-gray-400 active:text-primary' : 'text-gray-200'}"><i class="ph-bold ph-caret-${dir < 0 ? 'left' : 'right'} text-xs"></i></button>`;
+        let cells = '';
+        for (let i = 0; i < 7; i++) {
+            const d = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + i);
+            const ds = this.toLocalDateString(d);
+            const future = ds > todayStr;
+            const isSel = ds === sel, isToday = ds === todayStr;
+            let dot = 'bg-transparent';
+            if (!future) {
+                const info = s.dayInfo ? s.dayInfo(ds) : null;
+                const hasTx = allTransactions.some(t => t.dateStr === ds);
+                if (info && hasTx) dot = info.spent > Math.max(0, info.budget) ? 'bg-danger' : 'bg-success';
+                else if (info) dot = 'bg-gray-200';
+                else if (hasTx) dot = 'bg-gray-300';
+            }
+            const circle = isSel ? 'bg-primary text-white' : isToday ? 'ring-2 ring-secondary text-primary' : future ? 'text-gray-300' : 'text-primary';
+            cells += `<button type="button" ${future ? 'disabled' : `onclick="app.selectStripDay('${ds}')"`} class="day-cell" aria-label="${d.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long' })}" aria-pressed="${isSel}">
+                <span class="text-[9px] font-bold uppercase tracking-wide ${isSel ? 'text-primary' : 'text-gray-400'}">${names[i]}</span>
+                <span class="w-8 h-8 rounded-full flex items-center justify-center text-[13px] font-bold ${circle}">${d.getDate()}</span>
+                <span class="w-1.5 h-1.5 rounded-full ${dot}"></span>
+            </button>`;
+        }
+        weekEl.innerHTML = arrow(-1, prevOk) + cells + arrow(1, nextOk);
+        if (!weekEl._swipeBound) {
+            weekEl._swipeBound = true;
+            let sx = 0;
+            weekEl.addEventListener('touchstart', e => { sx = e.touches[0].clientX; }, { passive: true });
+            weekEl.addEventListener('touchend', e => { const dx = e.changedTouches[0].clientX - sx; if (Math.abs(dx) > 50) this.shiftStripWeek(dx < 0 ? 1 : -1); }, { passive: true });
+        }
+
+        // header: picked day + net
+        const sum = this._daySummary(sel, s);
+        const isToday = sel === todayStr;
+        document.getElementById('todayStripDay').textContent = isToday ? 'Hari ini' : selDate.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'short' });
+        const netEl = document.getElementById('todayStripNet');
+        if (!sum.txs.length) { netEl.textContent = 'belum ada transaksi'; netEl.className = 'shrink-0 text-[10px] font-semibold text-gray-400'; }
+        else {
+            netEl.textContent = `Net ${sum.net >= 0 ? '+' : '-'}Rp ${this.format(Math.abs(sum.net))}`;
+            netEl.className = `shrink-0 text-[11px] font-bold ${sum.net > 0 ? 'text-success' : sum.net < 0 ? 'text-danger' : 'text-gray-400'}`;
+        }
+
+        // details (shown when the card is open)
+        const row = (icon, label, n, value, cls) => `
+            <div class="flex items-center gap-3 px-3 py-1.5">
+                <i class="ph-bold ${icon} text-base text-primary w-5 text-center shrink-0"></i>
+                <p class="flex-1 min-w-0 text-xs font-bold text-primary">${label}${n ? ` <span class="text-gray-400 font-semibold">(${n})</span>` : ''}</p>
+                <span class="text-xs font-bold shrink-0 ${cls}">${value}</span>
+            </div>`;
+        const money = (v, sign) => `${sign}Rp ${this.format(Math.abs(v))}`;
+        let html = row('ph-tag', 'Pengeluaran', sum.expN, sum.expN ? money(sum.exp, '-') : 'Rp 0', sum.expN ? 'text-danger' : 'text-gray-300');
+        html += row('ph-arrows-clockwise', 'Tagihan', sum.billN, sum.billN ? money(sum.bill, '-') : 'Rp 0', sum.billN ? 'text-danger' : 'text-gray-300');
+        html += row('ph-money', 'Income', sum.incN, sum.incN ? money(sum.inc, '+') : 'Rp 0', sum.incN ? 'text-success' : 'text-gray-300');
+        if (sum.nonN) html += row('ph-prohibit', 'Non-budget', sum.nonN, money(sum.non, '-'), 'text-danger');
+        if (sum.sav) html += row('ph-bank', sum.sav < 0 ? 'Ditabung' : 'Dari tabungan', 0, money(sum.sav, sum.sav < 0 ? '-' : '+'), 'text-gray-500');
+        html += `<div class="flex items-center justify-between px-3 py-2 mt-1 border-t border-gray-100">
+                <span class="text-xs text-gray-500 font-semibold">Net untuk hari ini</span>
+                <span class="text-sm font-bold font-heading ${sum.net > 0 ? 'text-success' : sum.net < 0 ? 'text-danger' : 'text-gray-400'}">${sum.net >= 0 ? '' : '-'}Rp ${this.format(Math.abs(sum.net))}</span>
+            </div>`;
+        if (sum.info) {
+            const budget = Math.max(0, sum.info.budget), diff = budget - sum.info.spent;
+            html += `<div class="flex items-center justify-between gap-2 px-3 pb-2">
+                <span class="text-[10px] text-gray-400 font-semibold">Jatah hari itu ${this._rp(budget)} · terpakai ${this._rp(sum.info.spent)}</span>
+                ${diff >= 0 ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700">Hemat ${this._rpShort(diff)}</span>` : `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-600">Over ${this._rpShort(Math.abs(diff))}</span>`}
+            </div>`;
+        }
+        html += `<p class="px-3 pt-1 pb-1 text-[9px] font-bold uppercase tracking-wider text-gray-400 border-t border-gray-100">Transaksi</p>`;
+        html += sum.txs.length ? sum.txs.map(tx => {
             const { def, tag, sign, amtCls, eats, isTr } = this._txDayMeta(tx);
             const d = tx.date?.toDate ? tx.date.toDate() : null;
             const time = d && (d.getHours() || d.getMinutes()) ? d.toTimeString().slice(0, 5) : '';
@@ -3330,7 +3467,8 @@ window.app = {
                     </div>
                     <span class="text-xs font-bold shrink-0 ${amtCls}">${sign}Rp ${this.format(tx.amount)}</span>
                 </button>`;
-        }).join('') : `<p class="text-[11px] text-gray-400 text-center py-3">Belum ada transaksi hari ini. Ketik di chat, misal <code>kopi 25rb</code></p>`;
+        }).join('') : `<p class="text-[11px] text-gray-400 text-center py-3">${isToday ? 'Belum ada transaksi hari ini. Ketik di chat, misal <code>kopi 25rb</code>' : 'Nggak ada transaksi di hari ini 🫙'}</p>`;
+        list.innerHTML = html;
     },
 
     renderTodayBreakdown: function() {
