@@ -2,7 +2,7 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Dirhamku - Money Keeper</title>
     <meta name="theme-color" content="#040720">
     <link rel="manifest" href="/manifest.json">
@@ -35,6 +35,30 @@
     <style>
         /* No accidental zoom: block double-tap/pinch zoom everywhere (scroll still works), keep text size stable */
         html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+        /* iPhone notch / Dynamic Island: content starts below the safe area; a navy strip paints the status bar zone (status-bar style is black-translucent) */
+        :root { --sat: env(safe-area-inset-top, 0px); --sab: env(safe-area-inset-bottom, 0px); }
+        #safeTopBar { position: fixed; top: 0; left: 0; right: 0; height: var(--sat); background: #040720; z-index: 9990; pointer-events: none; }
+        #appScreen { padding-top: var(--sat); }
+        #bottomNav { height: calc(80px + var(--sab)); padding-bottom: var(--sab); }
+        #toast { top: calc(var(--sat) + 12px) !important; }
+        #viewAccountOverview, #viewAccountDetail, #sheetImport, #sheetRecurring { padding-top: var(--sat); }
+        #updateBanner { padding-top: var(--sat); }
+
+        /* Shared header parts: Day|Month switch (like a light/dark switch) and the month navigator */
+        .mode-switch { position: relative; display: inline-flex; flex-shrink: 0; padding: 3px; border-radius: 999px; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.12); }
+        .mode-switch button { position: relative; z-index: 1; display: flex; align-items: center; justify-content: center; gap: 4px; min-width: 62px; padding: 5px 10px; border-radius: 999px; font-size: 10px; font-weight: 700; color: rgba(255,255,255,.6); transition: color .25s; }
+        .mode-switch button[aria-pressed="true"] { color: #040720; }
+        .mode-thumb { position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc(50% - 3px); border-radius: 999px; background: #FFB800; box-shadow: 0 2px 8px rgba(255,184,0,.35); transition: transform .28s cubic-bezier(.34,1.3,.5,1); }
+        .mode-switch[data-mode="month"] .mode-thumb { transform: translateX(100%); }
+        .month-pill { display: inline-flex; align-items: center; gap: 4px; padding: 4px; border-radius: 999px; border: 1px solid transparent; flex-shrink: 0; }
+        .month-pill button { width: 28px; height: 28px; border-radius: 999px; display: flex; align-items: center; justify-content: center; font-size: 12px; transition: transform .15s, background .15s; }
+        .month-pill button:active { transform: scale(.9); }
+        .month-pill span { font-size: 12px; font-weight: 700; padding: 0 8px; min-width: 76px; text-align: center; white-space: nowrap; }
+        .month-pill--dark { background: rgba(255,255,255,.1); border-color: rgba(255,255,255,.1); color: #fff; }
+        .month-pill--dark button:hover { background: rgba(255,255,255,.2); }
+        .month-pill--light { background: #F3F4F6; color: #040720; }
+        .month-pill--light button { color: #4B5563; }
+        .month-pill--light button:hover { background: #E5E7EB; }
         * { touch-action: pan-x pan-y; }
         @supports (-webkit-touch-callout: none) { input, select, textarea { font-size: 16px !important; } } /* iOS zooms into inputs under 16px */
         body { font-family: 'Montserrat', sans-serif; background-color: #e2e8f0; color: #1F2937; }
@@ -167,6 +191,7 @@
 </head>
 
 <body class="bg-gray-200 h-screen flex justify-center items-center overflow-hidden">
+    <div id="safeTopBar" aria-hidden="true"></div>
 
     <!-- ==================== AUTH SCREEN ==================== -->
     <div id="authScreen" class="w-full h-full md:h-[90vh] md:w-[480px] md:rounded-[30px] bg-primary shadow-2xl relative flex flex-col items-center justify-center overflow-hidden border border-white/10 p-6 hidden">
@@ -371,30 +396,33 @@
             <!-- ====== TAB: HOME ====== -->
             <div id="tab-home" class="flex flex-col pb-24 min-h-full">
                 <!-- Header Home -->
-                <div class="bg-primary text-white p-6 pb-20 md:rounded-t-[30px] relative shrink-0">
+                <div class="bg-primary text-white px-5 pt-5 pb-[72px] rounded-b-[28px] relative shrink-0">
                     <div class="absolute top-0 right-0 p-4 opacity-10 blur-sm pointer-events-none">
                         <i class="ph-fill ph-circles-three text-6xl"></i>
                     </div>
-                    <div class="flex justify-between items-center mb-6 relative z-10">
-                        <div class="flex items-center gap-3">
-                            <div>
-                                <p class="text-[10px] text-tertiary uppercase tracking-wider font-semibold opacity-80" id="userGreeting">Halo, User</p>
-                                <h1 class="font-bold text-sm tracking-wide leading-tight">Dirhamku</h1>
-                            </div>
+                    <div class="flex justify-between items-center relative z-10">
+                        <div class="min-w-0">
+                            <p class="text-[10px] text-tertiary uppercase tracking-wider font-semibold opacity-80 truncate" id="userGreeting">Halo, User</p>
+                            <h1 class="font-heading font-bold text-lg leading-tight">Dirhamku</h1>
                         </div>
-                        <button onclick="app.setHomeMode('day')" class="ml-auto mr-2 flex items-center gap-1 bg-secondary text-primary rounded-full px-2.5 py-1.5 text-[10px] font-bold shadow-sm shadow-yellow-900/30 active:scale-95 transition" title="Day Mode: budget harian">
-                            <i class="ph-fill ph-sun text-xs"></i> Day
-                        </button>
-                        <div class="flex items-center gap-1 bg-white/10 rounded-full border border-white/10 backdrop-blur-md p-1">
-                            <button onclick="app.navigateMonth(-1)" class="w-7 h-7 rounded-full hover:bg-white/20 flex items-center justify-center transition active:scale-90"><i class="ph-bold ph-caret-left text-xs"></i></button>
-                            <span id="homeMonthLabel" class="text-xs font-bold px-2 whitespace-nowrap">Apr 2026</span>
-                            <button onclick="app.navigateMonth(1)" id="homeNextMonthBtn" class="w-7 h-7 rounded-full hover:bg-white/20 flex items-center justify-center transition active:scale-90"><i class="ph-bold ph-caret-right text-xs"></i></button>
+                        <div class="mode-switch" role="group" aria-label="Mode tampilan" data-mode="month">
+                            <span class="mode-thumb"></span>
+                            <button type="button" onclick="app.setHomeMode('day')" aria-pressed="false"><i class="ph-fill ph-sun text-xs"></i> Day</button>
+                            <button type="button" onclick="app.setHomeMode('month')" aria-pressed="true"><i class="ph-fill ph-calendar-blank text-xs"></i> Month</button>
                         </div>
                     </div>
 
-                    <div class="flex justify-between items-end relative z-10">
+                    <div class="flex items-center justify-between gap-3 mt-5 relative z-10">
+                        <p class="text-xs text-gray-300 font-medium">Total Balance</p>
+                        <div class="month-pill month-pill--dark">
+                            <button onclick="app.navigateMonth(-1)" aria-label="Bulan sebelumnya"><i class="ph-bold ph-caret-left"></i></button>
+                            <span id="homeMonthLabel">Apr 2026</span>
+                            <button onclick="app.navigateMonth(1)" id="homeNextMonthBtn" aria-label="Bulan berikutnya"><i class="ph-bold ph-caret-right"></i></button>
+                        </div>
+                    </div>
+
+                    <div class="flex justify-between items-end mt-1 relative z-10">
                         <div>
-                            <p class="text-xs text-gray-300 font-medium mb-1">Total Balance</p>
                             <h2 id="homeTotalBalance" class="text-3xl font-bold text-white tracking-tight font-heading"><span class="loader"></span></h2>
                         </div>
                         <div id="moodRingBadge" class="flex items-center gap-1.5 bg-white/10 backdrop-blur-sm border border-white/15 rounded-full px-3 py-1.5">
@@ -420,7 +448,7 @@
                     </div>
 
                     <!-- Today's Budget mini (opens Day Mode) -->
-                    <button type="button" id="cardTodayMini" data-state="loading" onclick="app.setHomeMode('day')" class="today-hero w-full text-left bg-primary text-white rounded-3xl p-4 relative overflow-hidden shadow-sm active:scale-[0.99] transition block">
+                    <button type="button" id="cardTodayMini" data-state="loading" onclick="app.setHomeMode('day', true)" class="today-hero w-full text-left bg-primary text-white rounded-3xl p-4 relative overflow-hidden shadow-sm active:scale-[0.99] transition block">
                         <div class="absolute -top-12 -right-10 w-36 h-36 rounded-full bg-tertiary/20 blur-2xl pointer-events-none"></div>
                         <div class="absolute -bottom-14 -left-10 w-32 h-32 rounded-full bg-secondary/10 blur-2xl pointer-events-none"></div>
                         <div class="flex items-center gap-3 relative z-10">
@@ -646,10 +674,11 @@
                             <h1 id="todayDateLabel" class="font-bold text-sm tracking-wide leading-tight truncate">Hari ini</h1>
                         </div>
                         <div class="flex items-center gap-2 shrink-0">
-                            <div class="flex items-center bg-white/10 rounded-full border border-white/10 p-1">
-                                <button class="px-2.5 py-1 rounded-full text-[10px] font-bold bg-secondary text-primary flex items-center gap-1"><i class="ph-fill ph-sun"></i> Day</button>
-                                <button onclick="app.setHomeMode('month')" class="px-2.5 py-1 rounded-full text-[10px] font-bold text-white/60 active:scale-95 transition">Month</button>
-                            </div>
+                            <div class="mode-switch" role="group" aria-label="Mode tampilan" data-mode="day">
+                            <span class="mode-thumb"></span>
+                            <button type="button" onclick="app.setHomeMode('day')" aria-pressed="true"><i class="ph-fill ph-sun text-xs"></i> Day</button>
+                            <button type="button" onclick="app.setHomeMode('month')" aria-pressed="false"><i class="ph-fill ph-calendar-blank text-xs"></i> Month</button>
+                        </div>
                             <button onclick="app.openTodayBreakdown()" class="w-8 h-8 rounded-full bg-white/10 border border-white/10 flex items-center justify-center active:scale-90 transition" title="Hitungan & pengaturan">
                                 <i class="ph-bold ph-sliders-horizontal text-sm"></i>
                             </button>
@@ -788,18 +817,18 @@
                         <div class="flex gap-2 items-center">
                             <button onclick="app.openRecurringModal()" class="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full text-gray-600 hover:bg-gray-200" title="Transaksi Rutin"><i class="ph-bold ph-repeat text-sm"></i></button>
                             <button onclick="app.openSearch()" class="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full text-gray-600 hover:bg-gray-200" title="Cari"><i class="ph-bold ph-magnifying-glass text-sm"></i></button>
-                            <div class="flex items-center gap-1 bg-gray-100 rounded-full px-2 py-1">
-                                <button onclick="app.navigateMonth(-1)" class="w-6 h-6 rounded-full hover:bg-gray-200 flex items-center justify-center transition active:scale-90"><i class="ph-bold ph-caret-left text-xs text-gray-600"></i></button>
-                                <span id="txMonthLabel" class="text-[11px] font-bold text-primary px-1 whitespace-nowrap">Apr 2026</span>
-                                <button onclick="app.navigateMonth(1)" id="txNextMonthBtn" class="w-6 h-6 rounded-full hover:bg-gray-200 flex items-center justify-center transition active:scale-90"><i class="ph-bold ph-caret-right text-xs text-gray-600"></i></button>
-                            </div>
+                            <div class="month-pill month-pill--light">
+                            <button onclick="app.navigateMonth(-1)" aria-label="Bulan sebelumnya"><i class="ph-bold ph-caret-left"></i></button>
+                            <span id="txMonthLabel">Apr 2026</span>
+                            <button onclick="app.navigateMonth(1)" id="txNextMonthBtn" aria-label="Bulan berikutnya"><i class="ph-bold ph-caret-right"></i></button>
+                        </div>
                         </div>
                     </div>
                     <!-- Horizontal Time Pills -->
                     <div id="txTimeFilter" class="flex gap-1.5 overflow-x-auto no-scrollbar pb-1"></div>
                 </div>
 
-                <div class="px-4 pt-3 pb-[calc(96px+env(safe-area-inset-bottom))] space-y-4 overflow-y-auto no-scrollbar flex-1 min-h-0 relative z-10">
+                <div class="px-4 pt-3 pb-24 space-y-4 overflow-y-auto no-scrollbar flex-1 min-h-0 relative z-10">
                     <div class="space-y-2.5">
                         <div class="flex items-center justify-between gap-3 px-1">
                             <div>
@@ -863,7 +892,7 @@
                         </div>
                     </div>
                     <!-- Chat Input Area -->
-                    <div id="chatComposer" class="shrink-0 bg-white p-3 pb-[calc(12px+env(safe-area-inset-bottom))] border-t border-gray-100 shadow-[0_-10px_20px_-10px_rgba(0,0,0,0.05)] flex items-end gap-2">
+                    <div id="chatComposer" class="shrink-0 bg-white p-3 pb-3 border-t border-gray-100 shadow-[0_-10px_20px_-10px_rgba(0,0,0,0.05)] flex items-end gap-2">
                         <div class="flex-1 bg-gray-100 rounded-2xl p-1 flex flex-col">
                             <input type="text" id="chatInput" placeholder="Transaksi hari ini..." class="w-full bg-transparent border-none text-sm px-3 py-2 outline-none font-medium text-primary placeholder-gray-400" autocomplete="off">
                         </div>
@@ -1063,17 +1092,17 @@
 
             <!-- ====== TAB: REPORT ====== -->
             <div id="tab-report" class="hidden flex-col pb-24 min-h-full bg-gray-50">
-                <div class="bg-primary text-white p-6 pb-16 md:rounded-t-[30px] relative shrink-0">
+                <div class="bg-primary text-white px-5 pt-5 pb-16 rounded-b-[28px] relative shrink-0">
                     <div class="absolute top-0 right-0 p-4 opacity-10 blur-sm pointer-events-none"><i class="ph-fill ph-chart-pie text-6xl"></i></div>
                     <div class="flex justify-between items-center relative z-10">
-                        <div>
+                        <div class="min-w-0">
                             <p class="text-[10px] text-tertiary uppercase tracking-wider font-semibold opacity-80">Laporan</p>
-                            <h1 class="font-bold text-lg tracking-wide leading-tight font-heading">Financial Report</h1>
+                            <h1 class="font-heading font-bold text-lg leading-tight">Financial Report</h1>
                         </div>
-                        <div class="flex items-center gap-1 bg-white/10 rounded-full border border-white/10 backdrop-blur-md p-1">
-                            <button onclick="app.navigateMonth(-1)" class="w-7 h-7 rounded-full hover:bg-white/20 flex items-center justify-center transition active:scale-90"><i class="ph-bold ph-caret-left text-xs"></i></button>
-                            <span id="reportMonthLabel" class="text-xs font-bold px-2 whitespace-nowrap">Apr 2026</span>
-                            <button onclick="app.navigateMonth(1)" id="reportNextMonthBtn" class="w-7 h-7 rounded-full hover:bg-white/20 flex items-center justify-center transition active:scale-90"><i class="ph-bold ph-caret-right text-xs"></i></button>
+                        <div class="month-pill month-pill--dark">
+                            <button onclick="app.navigateMonth(-1)" aria-label="Bulan sebelumnya"><i class="ph-bold ph-caret-left"></i></button>
+                            <span id="reportMonthLabel">Apr 2026</span>
+                            <button onclick="app.navigateMonth(1)" id="reportNextMonthBtn" aria-label="Bulan berikutnya"><i class="ph-bold ph-caret-right"></i></button>
                         </div>
                     </div>
                 </div>
@@ -1085,7 +1114,7 @@
             <!-- ====== TAB: SETTINGS ====== -->
             <div id="tab-settings" class="hidden flex-col pb-32 min-h-full bg-gray-50">
                 <!-- Header -->
-                <div class="bg-primary p-6 pb-16 text-white relative overflow-hidden shrink-0 rounded-b-[2.5rem]">
+                <div class="bg-primary px-5 pt-5 pb-16 text-white relative overflow-hidden shrink-0 rounded-b-[28px]">
                     <div class="absolute top-0 right-0 p-5 opacity-[0.07] blur-sm pointer-events-none">
                         <i class="ph-fill ph-gear text-8xl"></i>
                     </div>
@@ -1095,7 +1124,7 @@
                         </div>
                         <div class="min-w-0 flex-1">
                             <div class="flex items-center gap-2">
-                                <p class="font-bold text-base leading-tight truncate" id="settingsName">User</p>
+                                <p class="font-heading font-bold text-lg leading-tight truncate" id="settingsName">User</p>
                                 <button onclick="app.openSettingsSheet('settingsProfileSheet')" class="shrink-0 w-6 h-6 rounded-full bg-white/15 flex items-center justify-center hover:bg-white/25 transition active:scale-90">
                                     <i class="ph-fill ph-pencil-simple text-white text-xs"></i>
                                 </button>
@@ -1594,7 +1623,7 @@
 
         <!-- ====== OVERLAY: ACCOUNT OVERVIEW (Level 2) ====== -->
         <div id="viewAccountOverview" class="absolute inset-0 z-[80] bg-gray-50 hidden flex-col" style="overscroll-behavior:contain">
-            <div class="bg-primary text-white px-5 pt-12 pb-6">
+            <div class="bg-primary text-white px-5 pt-5 pb-6">
                 <div class="flex items-center gap-3 mb-4">
                     <button onclick="app.closeAccountOverview()" class="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center active:scale-95 transition">
                         <i class="ph-bold ph-arrow-left"></i>
@@ -1626,7 +1655,7 @@
 
         <!-- ====== OVERLAY: ACCOUNT DETAIL (Level 3) ====== -->
         <div id="viewAccountDetail" class="absolute inset-0 z-[90] bg-gray-50 hidden flex-col" style="overscroll-behavior:contain">
-            <div class="bg-primary text-white px-5 pt-12 pb-5">
+            <div class="bg-primary text-white px-5 pt-5 pb-5">
                 <div class="flex items-center gap-3 mb-1">
                     <button onclick="app.closeAccountDetail()" class="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center active:scale-95 transition">
                         <i class="ph-bold ph-arrow-left"></i>

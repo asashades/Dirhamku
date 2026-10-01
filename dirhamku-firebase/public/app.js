@@ -2550,9 +2550,25 @@ window.app = {
         try { return localStorage.getItem('dirhamku_home_mode') === 'day' ? 'day' : 'month'; } catch(e) { return 'month'; }
     },
 
-    setHomeMode: function(mode) {
-        try { localStorage.setItem('dirhamku_home_mode', mode === 'day' ? 'day' : 'month'); } catch(e) { /* ignore */ }
-        this.switchTab(mode === 'day' ? 'today' : 'home');
+    // Day | Month switch. The thumb slides first, then the view changes (instant = from a card, no switch on screen).
+    setHomeMode: function(mode, instant) {
+        mode = mode === 'day' ? 'day' : 'month';
+        const wasDay = this.getHomeMode() === 'day';
+        if (wasDay === (mode === 'day') && !instant && this._homeModeSynced) return;
+        try { localStorage.setItem('dirhamku_home_mode', mode); } catch(e) { /* ignore */ }
+        this._syncModeSwitches(mode);
+        const go = () => this.switchTab(mode === 'day' ? 'today' : 'home');
+        if (instant) go(); else setTimeout(go, 240);
+    },
+
+    _homeModeSynced: false,
+    _syncModeSwitches: function(mode) {
+        this._homeModeSynced = true;
+        document.querySelectorAll('.mode-switch').forEach(sw => {
+            sw.dataset.mode = mode;
+            const btns = sw.querySelectorAll('button');
+            btns.forEach((b, i) => b.setAttribute('aria-pressed', ((i === 0) === (mode === 'day')) ? 'true' : 'false'));
+        });
     },
 
     _isTodayActive: function() {
@@ -6067,6 +6083,7 @@ window.app = {
     // UI Tab & Modes
     switchTab: function(tab) {
         if (tab === 'home' && this.getHomeMode() === 'day') tab = 'today';
+        if (tab === 'home' || tab === 'today') this._syncModeSwitches(tab === 'today' ? 'day' : 'month');
         SFX.page();
         this.setActiveTabDisplay(tab);
         this._mountChat(tab === 'today' ? 'today' : 'input');
@@ -6079,14 +6096,14 @@ window.app = {
         
         const mainContainer = document.getElementById('mainContainer');
         if (tab === 'input' || tab === 'transactions' || tab === 'today') {
-            mainContainer.classList.remove('p-5', 'pb-32', 'overflow-y-auto');
+            mainContainer.classList.remove('overflow-y-auto');
             mainContainer.classList.add('overflow-hidden', 'flex', 'flex-col', 'min-h-0');
             if (tab === 'input') setTimeout(() => {
                 document.getElementById('chatInput')?.focus();
                 this.scrollChatToBottom();
             }, 100);
         } else {
-            mainContainer.classList.add('p-5', 'pb-32', 'overflow-y-auto');
+            mainContainer.classList.add('overflow-y-auto');
             mainContainer.classList.remove('overflow-hidden', 'flex', 'flex-col', 'min-h-0');
         }
 
