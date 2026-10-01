@@ -1583,6 +1583,8 @@ window.app = {
             document.getElementById('noSpendBtn')?.classList.add('hidden');
             document.getElementById('noSpendDoneLabel')?.classList.remove('hidden');
             this.updateStreaksAsync();
+            this._noSpendStreakCache = null;
+            this._renderNoSpendChip();
         } catch(e) { this.toast(e.message, true); }
     },
 
@@ -1605,6 +1607,8 @@ window.app = {
         if (btn) { btn.disabled = true; btn.classList.remove('hidden'); btn.classList.add('opacity-40', 'cursor-not-allowed'); }
         done?.classList.add('hidden');
         if (hint) { hint.textContent = '⚠️ Ada pengeluaran hari ini. No Spend Day tidak bisa dicatat.'; hint.classList.remove('hidden'); }
+        this._noSpendStreakCache = null;
+        this._renderNoSpendChip();
     },
 
 
@@ -1646,6 +1650,58 @@ window.app = {
             const doc = await db.collection('daily_logs').doc(docId).get();
             return doc.exists && doc.data().status === 'no_spend';
         } catch(e) { return false; }
+    },
+
+    // Consecutive no-spend days ending today (up to 30), cached per day for ~60s so
+    // Day Mode's chip and Home's streak badge don't each re-read 30 daily_logs docs
+    // on every render (renderToday runs on nearly every chat/tab interaction).
+    _noSpendStreakCache: null,
+    _getNoSpendStreakCached: async function() {
+        if (!currentUser) return 0;
+        const today = this.toLocalDateString(new Date());
+        const cached = this._noSpendStreakCache;
+        if (cached && cached.date === today && (Date.now() - cached.ts) < 60000) return cached.value;
+        let streak = 0;
+        try {
+            for (let i = 0; i < 30; i++) {
+                const d = new Date(); d.setDate(d.getDate() - i);
+                const dStr = this.toLocalDateString(d);
+                const hasTx = allTransactions.some(tx => tx.dateStr === dStr && tx.type === 'Expense');
+                if (hasTx) break;
+                const doc = await db.collection('daily_logs').doc(`${dStr}_${currentUser.uid}`).get();
+                if (doc.exists && doc.data().status === 'no_spend') streak++;
+                else break;
+            }
+        } catch(e) { /* silent */ }
+        this._noSpendStreakCache = { date: today, value: streak, ts: Date.now() };
+        return streak;
+    },
+
+    // Day Mode hero chip: tap to log a No Spend Day, hides once an expense lands today,
+    // shows a done state + streak once logged. Only mutates its own placeholder element
+    // (#todayNoSpendChip) so it's safe to run async without racing renderToday()'s innerHTML writes.
+    _renderNoSpendChip: async function() {
+        if (!currentUser) return;
+        const chip = document.getElementById('todayNoSpendChip');
+        if (!chip) return;
+        const hasTxToday = () => allTransactions.some(tx => tx.dateStr === this.toLocalDateString(new Date()) && tx.type === 'Expense');
+        if (hasTxToday()) { chip.style.display = 'none'; chip.disabled = true; return; }
+        const isDone = await this.checkNoSpendToday();
+        if (hasTxToday()) { chip.style.display = 'none'; chip.disabled = true; return; } // re-check: a tx may have landed while awaiting
+        chip.style.display = 'inline-flex';
+        if (isDone) {
+            chip.disabled = true;
+            chip.classList.add('text-emerald-300');
+            let label = `<i class="ph-fill ph-check-circle"></i> No Spend Day tercatat 🎉`;
+            const streak = await this._getNoSpendStreakCached();
+            if (hasTxToday()) { chip.style.display = 'none'; chip.disabled = true; return; }
+            if (streak >= 2) label += ` · 🔥${streak}`;
+            chip.innerHTML = label;
+        } else {
+            chip.disabled = false;
+            chip.classList.remove('text-emerald-300');
+            chip.innerHTML = `<i class="ph-fill ph-leaf"></i> Gue no spend hari ini 🌿`;
+        }
     },
 
     checkInconsistency: async function() {
@@ -2122,19 +2178,7 @@ window.app = {
                     const badge = document.getElementById('noSpendStreakBadge');
                     const countEl = document.getElementById('noSpendStreakCount');
                     if (!badge || !countEl) return;
-                    // Count consecutive no-spend days ending today (up to 30 days)
-                    let streak = 0;
-                    const today = new Date();
-                    for (let i = 0; i < 30; i++) {
-                        const d = new Date(today); d.setDate(today.getDate() - i);
-                        const dStr = this.toLocalDateString(d);
-                        const hasTx = allTransactions.some(tx => tx.dateStr === dStr && tx.type === 'Expense');
-                        if (hasTx) break;
-                        const docId = `${dStr}_${currentUser.uid}`;
-                        const doc = await db.collection('daily_logs').doc(docId).get();
-                        if (doc.exists && doc.data().status === 'no_spend') streak++;
-                        else break;
-                    }
+                    const streak = await this._getNoSpendStreakCached();
                     if (streak >= 2) {
                         countEl.textContent = streak;
                         badge.classList.remove('hidden');
@@ -2982,7 +3026,9 @@ window.app = {
             ofEl.textContent = 'Belum ada income masuk siklus ini';
             bar.style.width = '0%';
             chipsEl.innerHTML = `<button onclick="app.prefillChat('+ 5jt gaji')" class="today-chip !bg-secondary !text-primary !border-secondary active:scale-95 transition"><i class="ph-bold ph-plus"></i> Catat income di chat</button>
-                <span class="today-chip"><i class="ph-bold ph-hourglass-medium"></i> ${s.cycle.source === 'default' ? 'Siklus tgl ' + s.cycle.manualDay : s.daysLeft + ' hari ke gajian'}</span>`;
+                <span class="today-chip"><i class="ph-bold ph-hourglass-medium"></i> ${s.cycle.source === 'default' ? 'Siklus tgl ' + s.cycle.manualDay : s.daysLeft + ' hari ke gajian'}</span>
+                <button type="button" id="todayNoSpendChip" class="today-chip active:scale-95 transition" style="display:none" onclick="app.logNoSpendDay()"></button>`;
+            this._renderNoSpendChip();
             taglineIcon.className = 'ph-fill ph-coins text-secondary text-sm mt-px shrink-0';
             taglineEl.textContent = 'Toplesnya masih kosong. Begitu income lo kecatat, otomatis dibagi rata per hari (udah dipotong tagihan & langganan).';
             this._setTodayFill(0, false);
@@ -3030,7 +3076,9 @@ window.app = {
             ${trendChip}
             ${tomorrowChip}
             ${s.cycle.overdue ? '' : `<span class="today-chip"><i class="ph-bold ph-hourglass-medium"></i> ${s.daysLeft} hari ke gajian</span>`}
-            <span class="today-chip"><i class="ph-bold ph-arrow-down-left"></i> Income ${this._rpShort(s.incomeTotal)}</span>`;
+            <span class="today-chip"><i class="ph-bold ph-arrow-down-left"></i> Income ${this._rpShort(s.incomeTotal)}</span>
+            <button type="button" id="todayNoSpendChip" class="today-chip active:scale-95 transition" style="display:none" onclick="app.logNoSpendDay()"></button>`;
+        this._renderNoSpendChip();
 
         if (s.incomeTotal <= s.billsTotal) {
             taglineIcon.className = 'ph-fill ph-warning text-red-300 text-sm mt-px shrink-0';
