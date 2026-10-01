@@ -1583,6 +1583,8 @@ window.app = {
             document.getElementById('noSpendBtn')?.classList.add('hidden');
             document.getElementById('noSpendDoneLabel')?.classList.remove('hidden');
             this.updateStreaksAsync();
+            this._noSpendStreakCache = null;
+            this._renderNoSpendChip();
         } catch(e) { this.toast(e.message, true); }
     },
 
@@ -1605,6 +1607,8 @@ window.app = {
         if (btn) { btn.disabled = true; btn.classList.remove('hidden'); btn.classList.add('opacity-40', 'cursor-not-allowed'); }
         done?.classList.add('hidden');
         if (hint) { hint.textContent = '⚠️ Ada pengeluaran hari ini. No Spend Day tidak bisa dicatat.'; hint.classList.remove('hidden'); }
+        this._noSpendStreakCache = null;
+        this._renderNoSpendChip();
     },
 
 
@@ -1646,6 +1650,58 @@ window.app = {
             const doc = await db.collection('daily_logs').doc(docId).get();
             return doc.exists && doc.data().status === 'no_spend';
         } catch(e) { return false; }
+    },
+
+    // Consecutive no-spend days ending today (up to 30), cached per day for ~60s so
+    // Day Mode's chip and Home's streak badge don't each re-read 30 daily_logs docs
+    // on every render (renderToday runs on nearly every chat/tab interaction).
+    _noSpendStreakCache: null,
+    _getNoSpendStreakCached: async function() {
+        if (!currentUser) return 0;
+        const today = this.toLocalDateString(new Date());
+        const cached = this._noSpendStreakCache;
+        if (cached && cached.date === today && (Date.now() - cached.ts) < 60000) return cached.value;
+        let streak = 0;
+        try {
+            for (let i = 0; i < 30; i++) {
+                const d = new Date(); d.setDate(d.getDate() - i);
+                const dStr = this.toLocalDateString(d);
+                const hasTx = allTransactions.some(tx => tx.dateStr === dStr && tx.type === 'Expense');
+                if (hasTx) break;
+                const doc = await db.collection('daily_logs').doc(`${dStr}_${currentUser.uid}`).get();
+                if (doc.exists && doc.data().status === 'no_spend') streak++;
+                else break;
+            }
+        } catch(e) { /* silent */ }
+        this._noSpendStreakCache = { date: today, value: streak, ts: Date.now() };
+        return streak;
+    },
+
+    // Day Mode hero chip: tap to log a No Spend Day, hides once an expense lands today,
+    // shows a done state + streak once logged. Only mutates its own placeholder element
+    // (#todayNoSpendChip) so it's safe to run async without racing renderToday()'s innerHTML writes.
+    _renderNoSpendChip: async function() {
+        if (!currentUser) return;
+        const chip = document.getElementById('todayNoSpendChip');
+        if (!chip) return;
+        const hasTxToday = () => allTransactions.some(tx => tx.dateStr === this.toLocalDateString(new Date()) && tx.type === 'Expense');
+        if (hasTxToday()) { chip.style.display = 'none'; chip.disabled = true; return; }
+        const isDone = await this.checkNoSpendToday();
+        if (hasTxToday()) { chip.style.display = 'none'; chip.disabled = true; return; } // re-check: a tx may have landed while awaiting
+        chip.style.display = 'inline-flex';
+        if (isDone) {
+            chip.disabled = true;
+            chip.classList.add('text-emerald-300');
+            let label = `<i class="ph-fill ph-check-circle"></i> No Spend Day tercatat 🎉`;
+            const streak = await this._getNoSpendStreakCached();
+            if (hasTxToday()) { chip.style.display = 'none'; chip.disabled = true; return; }
+            if (streak >= 2) label += ` · 🔥${streak}`;
+            chip.innerHTML = label;
+        } else {
+            chip.disabled = false;
+            chip.classList.remove('text-emerald-300');
+            chip.innerHTML = `<i class="ph-fill ph-leaf"></i> Gue no spend hari ini 🌿`;
+        }
     },
 
     checkInconsistency: async function() {
@@ -2122,19 +2178,7 @@ window.app = {
                     const badge = document.getElementById('noSpendStreakBadge');
                     const countEl = document.getElementById('noSpendStreakCount');
                     if (!badge || !countEl) return;
-                    // Count consecutive no-spend days ending today (up to 30 days)
-                    let streak = 0;
-                    const today = new Date();
-                    for (let i = 0; i < 30; i++) {
-                        const d = new Date(today); d.setDate(today.getDate() - i);
-                        const dStr = this.toLocalDateString(d);
-                        const hasTx = allTransactions.some(tx => tx.dateStr === dStr && tx.type === 'Expense');
-                        if (hasTx) break;
-                        const docId = `${dStr}_${currentUser.uid}`;
-                        const doc = await db.collection('daily_logs').doc(docId).get();
-                        if (doc.exists && doc.data().status === 'no_spend') streak++;
-                        else break;
-                    }
+                    const streak = await this._getNoSpendStreakCached();
                     if (streak >= 2) {
                         countEl.textContent = streak;
                         badge.classList.remove('hidden');
@@ -2974,6 +3018,7 @@ window.app = {
             ofEl.textContent = 'Menghitung budget...';
             return;
         }
+        this._renderTodayStrip(s);
 
         if (s.state === 'setup') {
             labelEl.textContent = 'Budget hari ini';
@@ -2981,7 +3026,9 @@ window.app = {
             ofEl.textContent = 'Belum ada income masuk siklus ini';
             bar.style.width = '0%';
             chipsEl.innerHTML = `<button onclick="app.prefillChat('+ 5jt gaji')" class="today-chip !bg-secondary !text-primary !border-secondary active:scale-95 transition"><i class="ph-bold ph-plus"></i> Catat income di chat</button>
-                <span class="today-chip"><i class="ph-bold ph-hourglass-medium"></i> ${s.cycle.source === 'default' ? 'Siklus tgl ' + s.cycle.manualDay : s.daysLeft + ' hari ke gajian'}</span>`;
+                <span class="today-chip"><i class="ph-bold ph-hourglass-medium"></i> ${s.cycle.source === 'default' ? 'Siklus tgl ' + s.cycle.manualDay : s.daysLeft + ' hari ke gajian'}</span>
+                <button type="button" id="todayNoSpendChip" class="today-chip active:scale-95 transition" style="display:none" onclick="app.logNoSpendDay()"></button>`;
+            this._renderNoSpendChip();
             taglineIcon.className = 'ph-fill ph-coins text-secondary text-sm mt-px shrink-0';
             taglineEl.textContent = 'Toplesnya masih kosong. Begitu income lo kecatat, otomatis dibagi rata per hari (udah dipotong tagihan & langganan).';
             this._setTodayFill(0, false);
@@ -3029,7 +3076,9 @@ window.app = {
             ${trendChip}
             ${tomorrowChip}
             ${s.cycle.overdue ? '' : `<span class="today-chip"><i class="ph-bold ph-hourglass-medium"></i> ${s.daysLeft} hari ke gajian</span>`}
-            <span class="today-chip"><i class="ph-bold ph-arrow-down-left"></i> Income ${this._rpShort(s.incomeTotal)}</span>`;
+            <span class="today-chip"><i class="ph-bold ph-arrow-down-left"></i> Income ${this._rpShort(s.incomeTotal)}</span>
+            <button type="button" id="todayNoSpendChip" class="today-chip active:scale-95 transition" style="display:none" onclick="app.logNoSpendDay()"></button>`;
+        this._renderNoSpendChip();
 
         if (s.incomeTotal <= s.billsTotal) {
             taglineIcon.className = 'ph-fill ph-warning text-red-300 text-sm mt-px shrink-0';
@@ -3123,7 +3172,75 @@ window.app = {
 
     editTxFromDay: function(id) {
         this.closeSettingsSheet('todayBreakdownSheet');
-        this.openEditTxModal(id);
+        this.openEditTxModal(id, 'today');
+    },
+
+    // How a transaction counts in Day Mode (shared by the "Hari ini" strip and the day detail).
+    _txDayMeta: function(tx) {
+        const isTr = tx.type === 'Transfer';
+        let tag = '', sign = '-', amtCls = 'text-primary';
+        if (tx.type === 'Income') { sign = '+'; amtCls = 'text-success'; tag = 'Income'; }
+        else if (isTr) { sign = ''; amtCls = 'text-blue-500'; tag = 'Transfer'; }
+        else if (tx.recurringId) tag = 'Tagihan ✓';
+        else if (this._billMatched && this._billMatched.has(tx.id)) tag = 'Tagihan (dikenali)';
+        else if (this._isBudgetExcluded(tx)) tag = 'Non-budget';
+        return { def: this.getCategoryDef(tx.category), tag, sign, amtCls, eats: this._isDailySpend(tx), isTr };
+    },
+
+    _esc: function(v) {
+        return String(v ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+    },
+
+    isTodayStripOpen: function() {
+        try { return localStorage.getItem('dirhamku_today_strip') === 'open'; } catch(e) { return false; }
+    },
+
+    toggleTodayStrip: function() {
+        const open = !this.isTodayStripOpen();
+        try { localStorage.setItem('dirhamku_today_strip', open ? 'open' : 'closed'); } catch(e) { /* ignore */ }
+        this._applyTodayStripOpen(open);
+    },
+
+    _applyTodayStripOpen: function(open) {
+        const strip = document.getElementById('todayStrip');
+        if (!strip) return;
+        strip.dataset.open = open ? '1' : '0';
+        document.getElementById('todayStripToggle')?.setAttribute('aria-expanded', open ? 'true' : 'false');
+    },
+
+    // Collapsible list of today's transactions between the hero and the chat (folded by default).
+    _renderTodayStrip: function(s) {
+        const strip = document.getElementById('todayStrip');
+        const list = document.getElementById('todayStripList');
+        if (!strip || !list) return;
+        const txs = allTransactions.filter(tx => tx.dateStr === s.cycle.todayStr);
+        const count = document.getElementById('todayStripCount');
+        count.textContent = txs.length;
+        count.classList.toggle('hidden', !txs.length);
+        count.classList.toggle('inline-flex', !!txs.length);
+        const parts = [];
+        if (s.spentToday > 0) parts.push(`makan jatah ${this._rpShort(s.spentToday)}`);
+        if (s.incomeToday > 0) parts.push(`+${this._rpShort(s.incomeToday)} masuk`);
+        document.getElementById('todayStripSummary').textContent = !txs.length ? 'belum ada transaksi' : (parts.join(' · ') || 'nggak ada yang makan jatah');
+        this._applyTodayStripOpen(this.isTodayStripOpen());
+        strip.classList.remove('hidden');
+        strip.classList.add('flex');
+
+        list.innerHTML = txs.length ? txs.map(tx => {
+            const { def, tag, sign, amtCls, eats, isTr } = this._txDayMeta(tx);
+            const d = tx.date?.toDate ? tx.date.toDate() : null;
+            const time = d && (d.getHours() || d.getMinutes()) ? d.toTimeString().slice(0, 5) : '';
+            const sub = [time, this._esc(tx.category || '')].filter(Boolean).join(' · ');
+            return `
+                <button type="button" onclick="app.openEditTxModal('${tx.id}', 'today')" class="w-full flex items-center gap-2.5 px-3 py-1.5 text-left active:bg-gray-50 transition">
+                    <div class="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style="background:${isTr ? '#DBEAFE' : def.color + '15'};color:${isTr ? '#3B82F6' : def.color}"><i class="ph-fill ${isTr ? 'ph-arrows-left-right' : def.icon} text-xs"></i></div>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-xs font-bold text-primary truncate">${this._esc(tx.note || tx.category || 'Transfer')}</p>
+                        <p class="text-[10px] text-gray-400 truncate">${sub}${eats ? `${sub ? ' · ' : ''}<span class="text-danger font-bold">makan jatah</span>` : tag ? `${sub ? ' · ' : ''}<span class="${tx.type === 'Expense' ? 'text-tertiary' : ''} font-bold">${tag}</span>` : ''}</p>
+                    </div>
+                    <span class="text-xs font-bold shrink-0 ${amtCls}">${sign}Rp ${this.format(tx.amount)}</span>
+                </button>`;
+        }).join('') : `<p class="text-[11px] text-gray-400 text-center py-3">Belum ada transaksi hari ini. Ketik di chat, misal <code>kopi 25rb</code></p>`;
     },
 
     renderTodayBreakdown: function() {
@@ -3196,15 +3313,7 @@ window.app = {
                 : `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-600">Over ${this._rpShort(Math.abs(diff))}</span>`;
         }
         const txRows = selTxs.length ? selTxs.map(tx => {
-            const def = this.getCategoryDef(tx.category);
-            let tag = '', sign = '-', amtCls = 'text-primary';
-            if (tx.type === 'Income') { sign = '+'; amtCls = 'text-success'; tag = 'Income'; }
-            else if (tx.type === 'Transfer') { sign = ''; amtCls = 'text-blue-500'; tag = 'Transfer'; }
-            else if (tx.recurringId) tag = 'Tagihan ✓';
-            else if (this._billMatched && this._billMatched.has(tx.id)) tag = 'Tagihan (dikenali)';
-            else if (this._isBudgetExcluded(tx)) tag = 'Non-budget';
-            const eats = this._isDailySpend(tx);
-            const isTr = tx.type === 'Transfer';
+            const { def, tag, sign, amtCls, eats, isTr } = this._txDayMeta(tx);
             return `
                 <button type="button" onclick="app.editTxFromDay('${tx.id}')" class="w-full flex items-center gap-3 text-left active:opacity-70 transition">
                     <div class="w-8 h-8 rounded-xl flex items-center justify-center shrink-0" style="background:${isTr ? '#DBEAFE' : def.color + '15'};color:${isTr ? '#3B82F6' : def.color}"><i class="ph-fill ${isTr ? 'ph-arrows-left-right' : def.icon} text-sm"></i></div>
@@ -4795,10 +4904,11 @@ window.app = {
     },
 
     // ─── Edit Transaction Modal (Reused Input Form) ───────────────────────────
-    openEditTxModal: function(txId) {
+    openEditTxModal: function(txId, returnTab = null) {
         const tx = allTransactions.find(t => t.id === txId);
         if (!tx) return;
         this._editModeTxId = txId;
+        this._editReturnTab = returnTab;   // where closing/saving the edit goes back to (default: Transactions)
         this.switchTab('input');
         this.setInputMode('form');
 
@@ -4857,7 +4967,9 @@ window.app = {
     closeFormMode: function() {
         const wasEditing = !!this._editModeTxId;
         const wasRecurring = !!this._recurringMode;
+        const returnTab = this._editReturnTab;
         this._editModeTxId = null;
+        this._editReturnTab = null;
         this._recurringMode = false;
         const deleteBtn = document.getElementById('formDeleteBtn');
         const spacer = document.getElementById('formSpacer');
@@ -4892,7 +5004,7 @@ window.app = {
             // Re-open recurring list
             setTimeout(() => this.openRecurringModal(), 100);
         } else {
-            this.switchTab(wasEditing ? 'transactions' : 'home');
+            this.switchTab(wasEditing ? (returnTab || 'transactions') : 'home');
         }
     },
 
