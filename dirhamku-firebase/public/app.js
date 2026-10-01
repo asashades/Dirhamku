@@ -2887,7 +2887,8 @@ window.app = {
         const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
         const isBattery = this.getTodayVisual() === 'battery';
         const y0 = isBattery ? 22 : 12;   // where coins enter/leave: jar slot / top of battery
-        groups.forEach((g, idx) => setTimeout(() => this._fxBurst(g, fx, y0, isBattery, reduced), idx * 800));
+        const lead = this._holdTodayHeroOpen(groups.length * 800 + 2300);   // expand first when folded
+        groups.forEach((g, idx) => setTimeout(() => this._fxBurst(g, fx, y0, isBattery, reduced), lead + idx * 800));
     },
 
     _fxBurst: function(g, fx, y0, isBattery, reduced) {
@@ -2942,11 +2943,81 @@ window.app = {
         }
     },
 
+    // ── Hero "island": full card or compact pill (jar + progress bar) ───────────────────
+    // Effective state = compact when the user chose compact OR is typing in the chat (keyboard open),
+    // unless the user peeked (tapped to expand while typing) or a money effect is playing.
+    _heroTyping: false,
+    _heroPeek: false,
+    _heroFxHold: false,
+    _heroFxTimer: null,
+
+    getTodayHeroPref: function() {
+        try { return localStorage.getItem('dirhamku_today_hero') === 'compact' ? 'compact' : 'full'; } catch(e) { return 'full'; }
+    },
+
+    _syncTodayHero: function() {
+        const hero = document.getElementById('todayHero');
+        if (!hero) return;
+        const compact = !this._heroFxHold && !this._heroPeek && (this._heroTyping || this.getTodayHeroPref() === 'compact');
+        hero.classList.toggle('is-compact', compact);
+        hero.setAttribute('aria-expanded', compact ? 'false' : 'true');
+    },
+
+    // User action: 'compact' or 'full' (remembered)
+    setTodayHero: function(mode) {
+        try { localStorage.setItem('dirhamku_today_hero', mode === 'compact' ? 'compact' : 'full'); } catch(e) { /* ignore */ }
+        this._heroPeek = mode === 'full' && this._heroTyping;   // expanded by hand while the keyboard is open
+        this._syncTodayHero();
+    },
+
+    toggleTodayHero: function() {
+        const hero = document.getElementById('todayHero');
+        this.setTodayHero(hero && hero.classList.contains('is-compact') ? 'full' : 'compact');
+    },
+
+    _setupTodayHero: function() {
+        const hero = document.getElementById('todayHero');
+        if (!hero || hero._islandBound) return;
+        hero._islandBound = true;
+        // tap the compact pill to expand
+        hero.addEventListener('click', () => { hero._wasCompact = hero.classList.contains('is-compact'); }, true);   // state before any inner button changes it
+        hero.addEventListener('click', () => { if (hero._wasCompact) this.setTodayHero('full'); });
+        // swipe up = compact, swipe down = full
+        let sx = 0, sy = 0;
+        hero.addEventListener('touchstart', e => { sx = e.touches[0].clientX; sy = e.touches[0].clientY; }, { passive: true });
+        hero.addEventListener('touchend', e => {
+            const dx = e.changedTouches[0].clientX - sx, dy = e.changedTouches[0].clientY - sy;
+            if (Math.abs(dy) < 28 || Math.abs(dx) > Math.abs(dy)) return;
+            this.setTodayHero(dy < 0 ? 'compact' : 'full');
+        }, { passive: true });
+        // typing in the chat shrinks the island so the conversation keeps its room
+        const input = document.getElementById('chatInput');
+        if (input) {
+            input.addEventListener('focus', () => { if (!this._isTodayActive()) return; this._heroTyping = true; this._heroPeek = false; this._syncTodayHero(); });
+            input.addEventListener('blur', () => setTimeout(() => {
+                if (document.activeElement === input) return;
+                this._heroTyping = false; this._heroPeek = false; this._syncTodayHero();
+            }, 250));
+        }
+    },
+
+    // A money effect needs the full jar: pop the island open for the duration, then fold back.
+    _holdTodayHeroOpen: function(ms) {
+        const hero = document.getElementById('todayHero');
+        const wasCompact = !!hero && hero.classList.contains('is-compact');
+        this._heroFxHold = true;
+        this._syncTodayHero();
+        clearTimeout(this._heroFxTimer);
+        this._heroFxTimer = setTimeout(() => { this._heroFxHold = false; this._syncTodayHero(); }, ms + (wasCompact ? 450 : 0));
+        return wasCompact ? 450 : 0;
+    },
+
     getTodayVisual: function() {
         try { return localStorage.getItem('dirhamku_today_visual') === 'battery' ? 'battery' : 'jar'; } catch(e) { return 'jar'; }
     },
 
     toggleTodayVisual: function() {
+        if (document.getElementById('todayHero')?.classList.contains('is-compact')) return;   // tap expands instead
         const next = this.getTodayVisual() === 'jar' ? 'battery' : 'jar';
         try { localStorage.setItem('dirhamku_today_visual', next); } catch(e) { /* ignore */ }
         this._applyTodayVisual();
@@ -2961,6 +3032,9 @@ window.app = {
     },
 
     showToday: function() {
+        this._setupTodayHero();
+        this._heroTyping = false; this._heroPeek = false;
+        this._syncTodayHero();
         this._todayIntro = true;
         this._applyTodayVisual();
         this.renderToday();
@@ -9191,12 +9265,7 @@ document.addEventListener('click', function(e) {
 }, true); // Use capture phase to ensure it fires first
 
 document.getElementById('chatInput')?.addEventListener('keydown', e => { if(e.key === 'Enter') app.submitChat(); });
-// Day Mode: shrink the budget hero while typing so the chat keeps room above the keyboard
-document.getElementById('chatInput')?.addEventListener('focus', () => {
-    if (app._isTodayActive()) document.getElementById('todayHero')?.classList.add('is-compact');
-});
-document.getElementById('chatInput')?.addEventListener('blur', () => {
-    setTimeout(() => document.getElementById('todayHero')?.classList.remove('is-compact'), 150);
-});
+// No accidental pinch/double-tap zoom (iOS Safari ignores user-scalable=no)
+['gesturestart', 'gesturechange', 'gestureend'].forEach(ev => document.addEventListener(ev, e => e.preventDefault(), { passive: false }));
 
 app.init();

@@ -33,6 +33,10 @@
 
 
     <style>
+        /* No accidental zoom: block double-tap/pinch zoom everywhere (scroll still works), keep text size stable */
+        html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+        * { touch-action: pan-x pan-y; }
+        @supports (-webkit-touch-callout: none) { input, select, textarea { font-size: 16px !important; } } /* iOS zooms into inputs under 16px */
         body { font-family: 'Montserrat', sans-serif; background-color: #e2e8f0; color: #1F2937; }
         h1, h2, h3, h4, h5 { font-family: 'Poppins', sans-serif; }
         .loader { border: 3px solid rgba(255,255,255,0.3); border-top: 3px solid #FFB800; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; display: inline-block; }
@@ -77,16 +81,28 @@
         .prompt-chip:active { transform: scale(0.96); }
 
         /* ── Day Mode: Today's Budget ── */
-        .today-hero { --fill: #1CBDB3; --fill-2: #10B981; transition: padding .3s ease; }
+        .today-hero { --fill: #1CBDB3; --fill-2: #10B981; }
         .today-hero[data-state="mid"] { --fill: #FFB800; --fill-2: #F59E0B; }
         .today-hero[data-state="low"], .today-hero[data-state="over"] { --fill: #EF4444; --fill-2: #F97316; }
         .today-hero[data-state="setup"], .today-hero[data-state="loading"] { --fill: #64748B; --fill-2: #475569; }
-        .today-visual { width: 112px; height: 96px; transition: width .35s ease, height .35s ease; }
+        .today-visual { width: 112px; height: 96px; transition: width .4s cubic-bezier(.22,1,.36,1), height .4s cubic-bezier(.22,1,.36,1); }
         .today-visual svg { width: 100%; height: 100%; overflow: visible; }
-        .today-hero.is-compact .today-visual { width: 56px; height: 48px; }
-        .today-hero.is-compact .today-amount { font-size: 22px; }
-        .today-collapsible { max-height: 170px; opacity: 1; overflow: hidden; transition: max-height .35s ease, opacity .25s ease, margin .35s ease; }
-        .today-hero.is-compact .today-collapsible { max-height: 0; opacity: 0; margin-top: 0; }
+        /* Hero card: "full" (default) or "compact" (island: only the jar + progress bar) */
+        #todayHero { cursor: default; transition: padding .4s cubic-bezier(.22,1,.36,1), border-radius .4s ease; }
+        #todayHero.is-compact { padding: 12px 16px; cursor: pointer; }
+        .today-collapsible, .t-col { max-height: 170px; opacity: 1; overflow: hidden; transition: max-height .4s cubic-bezier(.22,1,.36,1), opacity .25s ease, margin .4s ease; }
+        .t-col.t-sm { max-height: 56px; }
+        #todayHero.is-compact .today-collapsible, #todayHero.is-compact .t-col { max-height: 0; opacity: 0; margin-top: 0; margin-bottom: 0; pointer-events: none; }
+        .today-row { margin-top: 16px; transition: margin-top .4s ease; }
+        #todayHero.is-compact .today-row { margin-top: 0; }
+        #todayHero.is-compact .today-visual { width: 39px; height: 34px; }   /* ~35% of the full jar */
+        .today-bar-wrap { margin-top: 8px; height: 6px; transition: margin-top .4s ease, height .4s ease; }
+        #todayHero.is-compact .today-bar-wrap { margin-top: 0; height: 8px; }
+        .today-chev { display: none; }
+        #todayHero.is-compact .today-chev { display: block; }
+        .today-grab { display: flex; justify-content: center; padding: 6px 0 0; }
+        .today-grab span { width: 36px; height: 4px; border-radius: 999px; background: rgba(255,255,255,.22); transition: background .2s; }
+        .today-grab:active span { background: rgba(255,255,255,.45); }
         .today-strip-list { max-height: 0; overflow: hidden; transition: max-height .3s ease; }
         #todayStrip[data-open="1"] .today-strip-list { max-height: 168px; overflow-y: auto; border-top: 1px solid #F3F4F6; }
         .today-hero.is-compact ~ #todayStrip .today-strip-list { max-height: 0; overflow: hidden; }
@@ -619,12 +635,12 @@
             </div>
 
             <!-- ====== TAB: TODAY (Day Mode) ====== -->
-            <div id="tab-today" class="hidden flex-col h-full min-h-0 bg-[#E2E8F0] relative overflow-hidden">
-                <div id="todayHero" data-state="loading" class="today-hero bg-primary text-white px-5 pt-5 pb-4 rounded-b-[28px] relative shrink-0 overflow-hidden z-10 shadow-[0_10px_30px_rgba(4,7,32,0.25)]">
+            <div id="tab-today" class="hidden flex-col h-full min-h-0 bg-gray-50 relative overflow-hidden">
+                <div id="todayHero" data-state="loading" class="today-hero bg-primary text-white px-5 pt-5 pb-3 mx-3 mt-3 rounded-[28px] relative shrink-0 overflow-hidden z-10 shadow-[0_10px_30px_rgba(4,7,32,0.25)]" aria-expanded="true">
                     <div class="absolute -top-16 -right-10 w-48 h-48 rounded-full bg-tertiary/20 blur-2xl today-glow pointer-events-none"></div>
                     <div class="absolute -bottom-20 -left-12 w-44 h-44 rounded-full bg-secondary/10 blur-2xl today-glow pointer-events-none" style="animation-delay:-3s"></div>
 
-                    <div class="flex justify-between items-center relative z-10">
+                    <div class="t-col t-sm flex justify-between items-center relative z-10">
                         <div class="min-w-0">
                             <p class="text-[10px] text-tertiary uppercase tracking-wider font-semibold opacity-80">Today's Budget</p>
                             <h1 id="todayDateLabel" class="font-bold text-sm tracking-wide leading-tight truncate">Hari ini</h1>
@@ -640,7 +656,7 @@
                         </div>
                     </div>
 
-                    <div class="flex items-center gap-4 mt-4 relative z-10">
+                    <div class="today-row flex items-center gap-4 relative z-10">
                         <button type="button" id="todayVisualWrap" onclick="app.toggleTodayVisual()" class="today-visual relative shrink-0 active:scale-95 transition-transform" title="Ganti toples / baterai">
                             <!-- Glass coin jar -->
                             <svg id="todayJar" viewBox="0 0 120 100" aria-hidden="true">
@@ -717,16 +733,17 @@
                             <div id="todayFx" class="absolute inset-0 pointer-events-none"></div>
                         </button>
                         <div class="flex-1 min-w-0">
-                            <div class="flex items-center justify-between gap-2">
+                            <div class="t-col t-sm flex items-center justify-between gap-2">
                                 <p id="todayLeftLabel" class="text-[10px] text-gray-300 font-semibold uppercase tracking-wider truncate">Sisa hari ini</p>
                                 <button type="button" id="todayTrend" onclick="app.openTodayBreakdown('why')" class="hidden shrink-0 items-center gap-0.5 rounded-full px-2 py-0.5 text-[10px] font-bold active:scale-95 transition"></button>
                             </div>
-                            <h2 id="todayLeftAmount" class="today-amount text-[28px] leading-tight font-bold font-heading tracking-tight truncate transition-all">Rp —</h2>
-                            <p id="todayOfLabel" class="text-[11px] text-white/60 font-medium truncate">Menghitung budget...</p>
-                            <div class="w-full h-1.5 bg-white/10 rounded-full overflow-hidden mt-2">
+                            <h2 id="todayLeftAmount" class="t-col t-sm today-amount text-[28px] leading-tight font-bold font-heading tracking-tight truncate">Rp —</h2>
+                            <p id="todayOfLabel" class="t-col t-sm text-[11px] text-white/60 font-medium truncate">Menghitung budget...</p>
+                            <div class="today-bar-wrap w-full bg-white/10 rounded-full overflow-hidden">
                                 <div id="todayBar" class="today-bar-fill h-full rounded-full" style="width:0%"></div>
                             </div>
                         </div>
+                        <i class="today-chev ph-bold ph-caret-down text-white/50 text-sm shrink-0" aria-hidden="true"></i>
                     </div>
 
                     <div class="today-collapsible mt-3 relative z-10">
@@ -735,6 +752,7 @@
                             <i id="todayTaglineIcon" class="ph-fill ph-sparkle text-secondary text-sm mt-px shrink-0"></i>
                             <p id="todayTagline" class="today-tagline text-[11px] text-white/70 leading-snug">We spread your bills out daily, just like your income. What's left is yours to spend.</p>
                         </button>
+                        <button type="button" onclick="app.setTodayHero('compact')" class="today-grab w-full" aria-label="Ciutkan kartu"><span></span></button>
                     </div>
                 </div>
                 <!-- Today's transactions: chat history isn't saved, so this keeps today's entries visible after reopening -->
@@ -751,7 +769,7 @@
                     </div>
                 </div>
                 <!-- Chat (moved here from the Input tab while Day Mode is open); min height keeps the composer on screen when the strip is open -->
-                <div id="todayChatSlot" class="flex-1 min-h-[120px] flex flex-col"></div>
+                <div id="todayChatSlot" class="flex-1 min-h-[120px] flex flex-col mx-3 mt-2 mb-8 rounded-[28px] overflow-hidden border border-gray-200/70 shadow-sm bg-[#E2E8F0]"></div>
             </div>
 
             <!-- ====== TAB: TRANSACTIONS ====== -->
@@ -850,10 +868,10 @@
                             <input type="text" id="chatInput" placeholder="Transaksi hari ini..." class="w-full bg-transparent border-none text-sm px-3 py-2 outline-none font-medium text-primary placeholder-gray-400" autocomplete="off">
                         </div>
                         <!-- AI Toggle -->
-                        <button id="chatAiToggle" onclick="app.toggleChatAiMode()" title="Mode AI" class="w-10 h-10 rounded-full shrink-0 flex items-center justify-center transition active:scale-95 bg-indigo-100 text-indigo-500">
+                        <button id="chatAiToggle" onmousedown="event.preventDefault()" onclick="app.toggleChatAiMode()" title="Mode AI" class="w-10 h-10 rounded-full shrink-0 flex items-center justify-center transition active:scale-95 bg-indigo-100 text-indigo-500">
                             <i class="ph-fill ph-sparkle text-lg"></i>
                         </button>
-                        <button onclick="app.submitChat()" class="w-10 h-10 bg-secondary text-primary rounded-full shrink-0 flex items-center justify-center shadow-lg active:scale-95 transition"><i class="ph-bold ph-paper-plane-right"></i></button>
+                        <button onmousedown="event.preventDefault()" onclick="app.submitChat()" class="w-10 h-10 bg-secondary text-primary rounded-full shrink-0 flex items-center justify-center shadow-lg active:scale-95 transition"><i class="ph-bold ph-paper-plane-right"></i></button>
                     </div>
                 </div>
 
