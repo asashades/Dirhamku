@@ -2709,6 +2709,7 @@ window.app = {
             })
             .sort((a, b) => b.perCycle - a.perCycle);
         const billsTotal = bills.reduce((s, b) => s + b.perCycle, 0);
+        const dailyBill = (c.totalDays > 0 && billsTotal > 0) ? Math.round(billsTotal / c.totalDays) : 0;
         this._billMatched = this._recurringCache ? this._matchManualBills(bills, c) : new Map();
 
         // Per-day money movements within the cycle (up to today)
@@ -2771,7 +2772,7 @@ window.app = {
         else state = 'good';
 
         return {
-            cycle: c, incomeTotal, incomeToday: income[c.todayStr] || 0, incomeCount, bills, billsTotal,
+            cycle: c, incomeTotal, incomeToday: income[c.todayStr] || 0, incomeCount, bills, billsTotal, dailyBill,
             spentBefore: sumWhere(spend, d => d < c.todayStr), spentToday, savingsNet,
             pool, daysLeft, todayBudget, yesterdayBudget, tomorrow, left, pct, state,
             trend: yesterdayBudget === null ? 0 : todayBudget - yesterdayBudget,
@@ -3274,8 +3275,7 @@ window.app = {
         let tag = '', sign = '-', amtCls = 'text-primary';
         if (tx.type === 'Income') { sign = '+'; amtCls = 'text-success'; tag = 'Income'; }
         else if (isTr) { sign = ''; amtCls = 'text-blue-500'; tag = 'Transfer'; }
-        else if (tx.recurringId) tag = 'Tagihan ✓';
-        else if (this._billMatched && this._billMatched.has(tx.id)) tag = 'Tagihan (dikenali)';
+        else if (tx.recurringId || (this._billMatched && this._billMatched.has(tx.id))) tag = 'Tagihan (dicadangkan)';
         else if (this._isBudgetExcluded(tx)) tag = 'Non-budget';
         return { def: this.getCategoryDef(tx.category), tag, sign, amtCls, eats: this._isDailySpend(tx), isTr };
     },
@@ -3304,9 +3304,9 @@ window.app = {
     // ── Ringkasan harian: week strip + summary of the picked day, between the hero and the chat ──
     _stripDay: null,   // YYYY-MM-DD of the picked day (null = today)
 
-    // What a day looked like: spending that ate the budget, bills, income, non-budget, savings moves, net, vs that day's budget.
+    // What a day looked like: spending that ate the budget, daily bill portion, income, non-budget, savings moves, net, vs that day's budget.
     _daySummary: function(ds, s) {
-        const r = { exp: 0, expN: 0, bill: 0, billN: 0, inc: 0, incN: 0, non: 0, nonN: 0, sav: 0, txs: [] };
+        const r = { exp: 0, expN: 0, bill: 0, billN: 0, billPaid: 0, billPaidN: 0, inc: 0, incN: 0, non: 0, nonN: 0, sav: 0, txs: [] };
         r.txs = allTransactions.filter(tx => tx.dateStr === ds);
         r.txs.forEach(tx => {
             if (tx.type === 'Income') { r.inc += tx.amount; r.incN++; }
@@ -3314,13 +3314,29 @@ window.app = {
                 const fromS = this._isSavingsAccount(tx.fromAccountId), toS = this._isSavingsAccount(tx.toAccountId);
                 if (!fromS && toS) r.sav -= tx.amount; else if (fromS && !toS) r.sav += tx.amount;
             } else if (tx.type === 'Expense') {
-                if (tx.recurringId || (this._billMatched && this._billMatched.has(tx.id))) { r.bill += tx.amount; r.billN++; }
-                else if (this._isBudgetExcluded(tx)) { r.non += tx.amount; r.nonN++; }
-                else { r.exp += tx.amount; r.expN++; }
+                if (tx.recurringId || (this._billMatched && this._billMatched.has(tx.id))) {
+                    r.billPaid += tx.amount;
+                    r.billPaidN++;
+                } else if (this._isBudgetExcluded(tx)) {
+                    r.non += tx.amount;
+                    r.nonN++;
+                } else {
+                    r.exp += tx.amount;
+                    r.expN++;
+                }
             }
         });
+        // Porsi tagihan harian (total tagihan siklus dibagi jumlah hari siklus)
+        const inCycle = s && s.cycle && ds >= s.cycle.startStr;
+        r.bill = (inCycle && s.billsTotal > 0 && s.cycle.totalDays > 0)
+            ? Math.round(s.billsTotal / s.cycle.totalDays)
+            : 0;
+        r.dailyBill = r.bill;
+        r.billN = r.billPaidN;
+        // Net untuk hari ini: Income - Pengeluaran - Porsi Tagihan Harian - Non-budget
+        // Transaksi riil pembayaran tagihan (r.billPaid) tidak mengurangi Net hari ini karena sudah dipotong porsi harian
         r.net = r.inc - r.exp - r.bill - r.non;
-        r.info = s.dayInfo ? s.dayInfo(ds) : null;   // { budget, spent } for days inside the cycle
+        r.info = s && s.dayInfo ? s.dayInfo(ds) : null;   // { budget, spent } for days inside the cycle
         return r;
     },
 
@@ -3422,8 +3438,10 @@ window.app = {
         const isToday = sel === todayStr;
         document.getElementById('todayStripDay').textContent = isToday ? 'Hari ini' : selDate.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'short' });
         const netEl = document.getElementById('todayStripNet');
-        if (!sum.txs.length) { netEl.textContent = 'belum ada transaksi'; netEl.className = 'shrink-0 text-[10px] font-semibold text-gray-400'; }
-        else {
+        if (!sum.txs.length && !sum.bill) {
+            netEl.textContent = 'belum ada transaksi';
+            netEl.className = 'shrink-0 text-[10px] font-semibold text-gray-400';
+        } else {
             netEl.textContent = `Net ${sum.net >= 0 ? '+' : '-'}Rp ${this.format(Math.abs(sum.net))}`;
             netEl.className = `shrink-0 text-[11px] font-bold ${sum.net > 0 ? 'text-success' : sum.net < 0 ? 'text-danger' : 'text-gray-400'}`;
         }
@@ -3437,7 +3455,12 @@ window.app = {
             </div>`;
         const money = (v, sign) => `${sign}Rp ${this.format(Math.abs(v))}`;
         let html = row('ph-tag', 'Pengeluaran', sum.expN, sum.expN ? money(sum.exp, '-') : 'Rp 0', sum.expN ? 'text-danger' : 'text-gray-300');
-        html += row('ph-arrows-clockwise', 'Tagihan', sum.billN, sum.billN ? money(sum.bill, '-') : 'Rp 0', sum.billN ? 'text-danger' : 'text-gray-300');
+        const billLabel = sum.bill > 0
+            ? (sum.billPaidN > 0
+                ? `Tagihan harian <span class="text-[10px] text-gray-400 font-normal">(${sum.billPaidN} dibayar ${this._rpShort(sum.billPaid)})</span>`
+                : `Tagihan harian <span class="text-[10px] text-gray-400 font-normal">(porsi ${this._rpShort(sum.bill)}/hari)</span>`)
+            : 'Tagihan';
+        html += row('ph-arrows-clockwise', billLabel, 0, sum.bill ? money(sum.bill, '-') : 'Rp 0', sum.bill ? 'text-danger' : 'text-gray-300');
         html += row('ph-money', 'Income', sum.incN, sum.incN ? money(sum.inc, '+') : 'Rp 0', sum.incN ? 'text-success' : 'text-gray-300');
         if (sum.nonN) html += row('ph-prohibit', 'Non-budget', sum.nonN, money(sum.non, '-'), 'text-danger');
         if (sum.sav) html += row('ph-bank', sum.sav < 0 ? 'Ditabung' : 'Dari tabungan', 0, money(sum.sav, sum.sav < 0 ? '-' : '+'), 'text-gray-500');
@@ -3448,7 +3471,7 @@ window.app = {
         if (sum.info) {
             const budget = Math.max(0, sum.info.budget), diff = budget - sum.info.spent;
             html += `<div class="flex items-center justify-between gap-2 px-3 pb-2">
-                <span class="text-[10px] text-gray-400 font-semibold">Jatah hari itu ${this._rp(budget)} · terpakai ${this._rp(sum.info.spent)}</span>
+                <span class="text-[10px] text-gray-400 font-semibold">Jatah belanja ${this._rp(budget)} · terpakai ${this._rp(sum.info.spent)}</span>
                 ${diff >= 0 ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700">Hemat ${this._rpShort(diff)}</span>` : `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-600">Over ${this._rpShort(Math.abs(diff))}</span>`}
             </div>`;
         }
@@ -3496,13 +3519,21 @@ window.app = {
                 <p class="text-sm font-bold font-heading shrink-0 ${cls}">${value}</p>
             </div>`;
 
+        const grossPool = s.pool + s.billsTotal;
+        const grossDaily = Math.round(grossPool / s.daysLeft);
+        const billPerDay = s.dailyBill || (c.totalDays > 0 ? Math.round(s.billsTotal / c.totalDays) : 0);
+        const billPortionToday = Math.max(0, grossDaily - s.todayBudget);
+
         let math = row('Income masuk', `${s.incomeCount} transaksi sejak ${fmtD(c.start)}`, `+${this._rp(s.incomeTotal)}`, 'text-success');
-        math += row(`Tagihan & langganan (${s.bills.length})`, 'Dicadangin di awal siklus', `-${this._rp(s.billsTotal)}`, 'text-danger');
-        math += row('Pengeluaran sebelum hari ini', c.dayIndex > 0 ? `${c.dayIndex} hari terakhir` : 'Hari pertama siklus', `-${this._rp(s.spentBefore)}`, 'text-danger');
+        math += row(`Total tagihan & langganan (${s.bills.length})`, `Total ${this._rp(s.billsTotal)} dibagi per hari`, `-${this._rp(s.billsTotal)}`, 'text-danger');
+        if (s.spentBefore > 0) math += row('Pengeluaran sebelum hari ini', c.dayIndex > 0 ? `${c.dayIndex} hari terakhir` : 'Hari pertama siklus', `-${this._rp(s.spentBefore)}`, 'text-danger');
         if (Math.abs(s.savingsNet) >= 1) math += row(s.savingsNet < 0 ? 'Ditabung' : 'Ambil dari tabungan', 'Transfer dengan akun dana darurat', `${s.savingsNet < 0 ? '-' : '+'}${this._rp(Math.abs(s.savingsNet))}`, s.savingsNet < 0 ? 'text-danger' : 'text-success');
-        math += row('Uang buat sisa siklus', c.overdue ? `÷ ${s.daysLeft} hari (gaji telat, dijatah 7 hari dulu)` : `÷ ${s.daysLeft} hari sampai gajian`, this._rp(s.pool), s.pool < 0 ? 'text-danger' : 'text-primary', true);
-        math += row('Jatah hari ini', s.yesterdayBudget === null ? '' : `Kemarin ${this._rp(s.yesterdayBudget)} (${s.trend >= 0 ? 'naik' : 'turun'} ${this._rpShort(Math.abs(s.trend))})`, this._rp(s.todayBudget), s.todayBudget < 0 ? 'text-danger' : 'text-primary', true);
-        math += row('Terpakai hari ini', 'Di luar tagihan recurring & transaksi non-budget', `-${this._rp(s.spentToday)}`, 'text-danger');
+        math += row('Jatah dasar harian', `Uang sisa sebelum beban tagihan ÷ ${s.daysLeft} hari`, this._rp(grossDaily), 'text-primary', true);
+        if (s.billsTotal > 0) {
+            math += row('Beban tagihan harian', `${this._rp(s.billsTotal)} ÷ ${c.totalDays} hari siklus`, `-${this._rp(billPortionToday > 0 ? billPortionToday : billPerDay)}`, 'text-danger');
+        }
+        math += row('Jatah bersih hari ini', s.yesterdayBudget === null ? '' : `Kemarin ${this._rp(s.yesterdayBudget)} (${s.trend >= 0 ? 'naik' : 'turun'} ${this._rpShort(Math.abs(s.trend))})`, this._rp(s.todayBudget), s.todayBudget < 0 ? 'text-danger' : 'text-primary', true);
+        math += row('Terpakai hari ini', 'Di luar tagihan & transaksi non-budget', `-${this._rp(s.spentToday)}`, 'text-danger');
         math += row(s.left < 0 ? 'Over budget' : 'Sisa hari ini', s.tomorrow === null ? 'Besok gajian 🎉' : `Jatah besok ~${this._rp(s.tomorrow)}`, this._rp(s.left), s.left < 0 ? 'text-danger' : 'text-success', true);
 
         // Last 7 days: each day against the budget it actually had (tap a bar for its transactions)
